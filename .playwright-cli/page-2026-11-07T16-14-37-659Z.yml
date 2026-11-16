@@ -1,0 +1,82 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: P
+      - generic [ref=e7]:
+        - strong [ref=e8]: Pia
+        - generic [ref=e9]: Research workspace
+    - generic [ref=e10]:
+      - generic [ref=e11]: Workspace
+      - button "O Overview" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: O
+        - text: Overview
+      - button "M Market" [ref=e14] [cursor=pointer]:
+        - generic [ref=e15]: M
+        - text: Market
+      - button "P Portfolio" [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]: P
+        - text: Portfolio
+      - button "R Research" [ref=e18] [cursor=pointer]:
+        - generic [ref=e19]: R
+        - text: Research
+    - generic [ref=e20]:
+      - generic [ref=e21]: Controls
+      - button "P Profile" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: P
+        - text: Profile
+      - button "R Rules" [ref=e24] [cursor=pointer]:
+        - generic [ref=e25]: R
+        - text: Rules
+      - button "D Data Health" [ref=e26] [cursor=pointer]:
+        - generic [ref=e27]: D
+        - text: Data Health
+      - button "A Audit" [ref=e28] [cursor=pointer]:
+        - generic [ref=e29]: A
+        - text: Audit
+      - button "N Notifications" [ref=e30] [cursor=pointer]:
+        - generic [ref=e31]: "N"
+        - text: Notifications
+    - generic [ref=e34]:
+      - strong [ref=e35]: Local runtime online
+      - generic [ref=e36]: deepseek-flash
+  - main [ref=e37]:
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e40]: Today
+        - heading "Research overview" [level=1] [ref=e41]
+      - generic [ref=e42]:
+        - generic [ref=e43]: 2026-11-05 · Close
+        - generic [ref=e44]: Data healthy
+        - generic [ref=e46]: Notifications 0
+        - button "↻" [ref=e47] [cursor=pointer]
+        - button "+ New review" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]: Active tasks
+        - strong [ref=e52]: "0"
+        - generic [ref=e53]: Trace updates live
+      - generic [ref=e54]:
+        - generic [ref=e55]: Awaiting approval
+        - strong [ref=e56]: "0"
+        - generic [ref=e57]: Human decision required
+      - generic [ref=e58]:
+        - generic [ref=e59]: Blocked today
+        - strong [ref=e60]: "0"
+        - generic [ref=e61]: Rules-first gate
+      - generic [ref=e62]:
+        - generic [ref=e63]: Rule snapshot
+        - strong [ref=e64]: v1
+        - generic [ref=e65]: Immutable per task
+    - generic [ref=e66]:
+      - generic [ref=e67]:
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - generic [ref=e70]: Research queue
+            - heading "Tasks" [level=2] [ref=e71]
+          - generic [ref=e72]: "0"
+        - generic [ref=e74]:
+          - generic [ref=e75]: —
+          - paragraph [ref=e76]: 还没有研究任务。创建一次收盘复盘开始。
+      - generic [ref=e78]:
+        - generic [ref=e79]: —
+        - paragraph [ref=e80]: 选择一个任务查看决策、证据和执行轨迹。

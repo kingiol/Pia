@@ -1,0 +1,141 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: P
+      - generic [ref=e7]:
+        - strong [ref=e8]: Pia
+        - generic [ref=e9]: 你的投资研究助手
+    - generic [ref=e10]:
+      - generic [ref=e11]: 工作台
+      - button "总览" [ref=e12] [cursor=pointer]
+      - button "市场" [ref=e16] [cursor=pointer]
+      - button "自选" [ref=e20] [cursor=pointer]
+      - button "持仓" [ref=e24] [cursor=pointer]
+      - button "研究" [ref=e28] [cursor=pointer]
+      - button "决策日志" [ref=e32] [cursor=pointer]
+    - generic [ref=e36]:
+      - generic [ref=e37]: 设置
+      - button "设置" [ref=e38] [cursor=pointer]
+      - button "规则" [ref=e42] [cursor=pointer]
+      - button "数据" [ref=e46] [cursor=pointer]
+      - button "审计" [ref=e50] [cursor=pointer]
+      - button "通知" [ref=e54] [cursor=pointer]
+    - generic [ref=e60]:
+      - strong [ref=e61]: 正在连接
+      - generic [ref=e62]: deepseek-flash
+  - main [ref=e63]:
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e66]: 今天
+        - heading "研究总览" [level=1] [ref=e67]
+      - generic [ref=e68]:
+        - textbox "Search tasks or symbols" [ref=e69]:
+          - /placeholder: 搜索任务或股票代码
+        - generic [ref=e70]: 2026-11-10 · 收盘
+        - generic [ref=e71]: 正在连接
+        - generic [ref=e73]: 正在连接
+        - generic [ref=e75]: 通知 0
+        - button "刷新" [ref=e76] [cursor=pointer]: ↻
+        - button "开始今日复盘" [ref=e77] [cursor=pointer]
+    - generic [ref=e78]:
+      - generic [ref=e79]:
+        - generic [ref=e80]:
+          - generic [ref=e81]: 你的策略
+          - generic [ref=e82]: 规则 v1
+        - heading "Pia 按这套方式研究" [level=2] [ref=e83]
+        - paragraph [ref=e84]: 还没有设置投资目标
+        - generic [ref=e85]:
+          - generic [ref=e86]:
+            - generic [ref=e87]: 风险偏好
+            - strong [ref=e88]: 未设置
+          - generic [ref=e89]:
+            - generic [ref=e90]: 最大回撤
+            - strong [ref=e91]: 未设置
+          - generic [ref=e92]:
+            - generic [ref=e93]: 研究范围
+            - strong [ref=e94]: 0 个标的
+      - generic [ref=e95]:
+        - generic [ref=e96]:
+          - generic [ref=e97]: 你的 Agent
+          - generic [ref=e98]: 等待调度
+        - paragraph [ref=e100]: 关注 0 个自选标的、0 个持仓
+        - generic [ref=e101]:
+          - generic [ref=e102]:
+            - generic [ref=e103]: 上次检查
+            - strong [ref=e104]: 尚未运行
+          - generic [ref=e105]:
+            - generic [ref=e106]: 当前规则
+            - strong [ref=e107]: v1
+        - generic [ref=e108]:
+          - generic [ref=e109]: 下一步
+          - strong [ref=e110]: 去数据页开启调度
+    - generic [ref=e111]:
+      - generic [ref=e112]:
+        - generic [ref=e113]: 第一次使用
+        - heading "把今天的市场，变成一份看得懂的研究结论。" [level=2] [ref=e114]
+        - paragraph [ref=e115]: 完成下面四步，Pia 会按你的投资纪律整理市场、持仓和风险。整个过程只读，不会替你下单。
+        - generic [ref=e117]: 0/4 已完成 · 下一步：告诉 Pia 你的投资方式
+      - generic [ref=e118]:
+        - button "1 告诉 Pia 你的投资方式 风险偏好、投资目标和可研究范围 去设置 →" [ref=e119] [cursor=pointer]:
+          - generic [ref=e120]: "1"
+          - generic [ref=e121]:
+            - strong [ref=e122]: 告诉 Pia 你的投资方式
+            - generic [ref=e123]: 风险偏好、投资目标和可研究范围
+          - generic [ref=e124]: 去设置 →
+        - button "2 导入你的持仓 支持 CSV、Excel 或手工录入 导入持仓 →" [ref=e125] [cursor=pointer]:
+          - generic [ref=e126]: "2"
+          - generic [ref=e127]:
+            - strong [ref=e128]: 导入你的持仓
+            - generic [ref=e129]: 支持 CSV、Excel 或手工录入
+          - generic [ref=e130]: 导入持仓 →
+        - button "3 确认数据准备好 检查行情源、数据日期和模型凭据 检查数据 →" [ref=e131] [cursor=pointer]:
+          - generic [ref=e132]: "3"
+          - generic [ref=e133]:
+            - strong [ref=e134]: 确认数据准备好
+            - generic [ref=e135]: 检查行情源、数据日期和模型凭据
+          - generic [ref=e136]: 检查数据 →
+        - button "4 完成第一次收盘复盘 Pia 会给出结论、依据和风险提示 开始复盘 →" [ref=e137] [cursor=pointer]:
+          - generic [ref=e138]: "4"
+          - generic [ref=e139]:
+            - strong [ref=e140]: 完成第一次收盘复盘
+            - generic [ref=e141]: Pia 会给出结论、依据和风险提示
+          - generic [ref=e142]: 开始复盘 →
+    - generic [ref=e143]:
+      - generic [ref=e144]:
+        - generic [ref=e145]:
+          - generic [ref=e146]: Pia 正在关注
+          - heading "需要你留意的变化" [level=2] [ref=e147]
+        - generic [ref=e148]: 0 未读
+      - generic [ref=e149]:
+        - strong [ref=e150]: 今天还没有需要处理的事件
+        - generic [ref=e151]: 收盘、持仓风险和数据质量变化会自动出现在这里。
+    - generic [ref=e152]:
+      - generic [ref=e153]:
+        - generic [ref=e154]: 进行中的研究
+        - strong [ref=e155]: "0"
+        - generic [ref=e156]: 实时更新进度
+      - generic [ref=e157]:
+        - generic [ref=e158]: 等你确认
+        - strong [ref=e159]: "0"
+        - generic [ref=e160]: 需要人工判断
+      - generic [ref=e161]:
+        - generic [ref=e162]: 被规则拦截
+        - strong [ref=e163]: "0"
+        - generic [ref=e164]: 先解决风险再行动
+      - generic [ref=e165]:
+        - generic [ref=e166]: 当前规则
+        - strong [ref=e167]: v1
+        - generic [ref=e168]: 每次研究固定版本
+    - generic [ref=e169]:
+      - generic [ref=e170]:
+        - generic [ref=e171]:
+          - generic [ref=e172]:
+            - generic [ref=e173]: 研究记录
+            - heading "你的研究" [level=2] [ref=e174]
+          - generic [ref=e175]: "0"
+        - generic [ref=e177]:
+          - generic [ref=e178]: —
+          - paragraph [ref=e179]: 完成上面的设置后，开始第一次收盘复盘。
+      - generic [ref=e181]:
+        - generic [ref=e182]: —
+        - paragraph [ref=e183]: 选择一条研究记录，这里会显示结论、依据和风险。

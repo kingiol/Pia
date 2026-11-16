@@ -1,0 +1,92 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: P
+      - generic [ref=e7]:
+        - strong [ref=e8]: Pia
+        - generic [ref=e9]: 你的投资研究助手
+    - generic [ref=e10]:
+      - generic [ref=e11]: 工作台
+      - button "总览" [ref=e12] [cursor=pointer]
+      - button "市场" [ref=e16] [cursor=pointer]
+      - button "自选" [ref=e20] [cursor=pointer]
+      - button "持仓" [ref=e24] [cursor=pointer]
+      - button "研究" [ref=e28] [cursor=pointer]
+      - button "决策日志" [ref=e32] [cursor=pointer]
+    - generic [ref=e36]:
+      - generic [ref=e37]: 设置
+      - button "设置" [ref=e38] [cursor=pointer]
+      - button "规则" [ref=e42] [cursor=pointer]
+      - button "数据" [ref=e46] [cursor=pointer]
+      - button "审计" [ref=e50] [cursor=pointer]
+      - button "通知" [ref=e54] [cursor=pointer]
+    - generic [ref=e60]:
+      - strong [ref=e61]: 正在连接
+      - generic [ref=e62]: deepseek-flash
+  - main [ref=e63]:
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e66]: 今天
+        - heading "决策日志" [level=1] [ref=e67]
+      - generic [ref=e68]:
+        - textbox "Search tasks or symbols" [ref=e69]:
+          - /placeholder: 搜索任务或股票代码
+        - generic [ref=e70]: 2026-11-10 · 收盘
+        - generic [ref=e71]: 正在连接
+        - generic [ref=e73]: 正在连接
+        - generic [ref=e75]: 通知 0
+        - button "刷新" [ref=e76] [cursor=pointer]: ↻
+        - button "开始今日复盘" [ref=e77] [cursor=pointer]
+    - generic [ref=e78]:
+      - generic [ref=e79]:
+        - generic [ref=e80]: 进行中的研究
+        - strong [ref=e81]: "0"
+        - generic [ref=e82]: 实时更新进度
+      - generic [ref=e83]:
+        - generic [ref=e84]: 等你确认
+        - strong [ref=e85]: "0"
+        - generic [ref=e86]: 需要人工判断
+      - generic [ref=e87]:
+        - generic [ref=e88]: 被规则拦截
+        - strong [ref=e89]: "0"
+        - generic [ref=e90]: 先解决风险再行动
+      - generic [ref=e91]:
+        - generic [ref=e92]: 当前规则
+        - strong [ref=e93]: v1
+        - generic [ref=e94]: 每次研究固定版本
+    - generic [ref=e95]:
+      - tablist "决策日志视图" [ref=e96]:
+        - tab "Journal" [selected] [ref=e97] [cursor=pointer]
+        - tab "Patterns" [ref=e98] [cursor=pointer]
+        - tab "Memory" [ref=e99] [cursor=pointer]
+      - generic [ref=e100]:
+        - generic [ref=e102]:
+          - generic [ref=e104]:
+            - generic [ref=e105]: Cross-task facts
+            - heading "Journal summary" [level=3] [ref=e106]
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - strong [ref=e109]: "0"
+              - generic [ref=e110]: 研究决策
+            - generic [ref=e111]:
+              - strong [ref=e112]: "0"
+              - generic [ref=e113]: 后续记录
+            - generic [ref=e114]:
+              - strong [ref=e115]: "0"
+              - generic [ref=e116]: 采纳建议
+            - generic [ref=e117]:
+              - strong [ref=e118]: "0"
+              - generic [ref=e119]: 未采取行动
+          - paragraph [ref=e120]: 这里展示已存在的研究事实，不把结果改写成当时的预测。
+        - generic [ref=e121]:
+          - generic [ref=e123]:
+            - generic [ref=e124]: 0 records
+            - heading "Decision timeline" [level=3] [ref=e125]
+          - generic [ref=e126]:
+            - textbox "按股票代码筛选" [ref=e127]:
+              - /placeholder: 筛选股票代码
+            - combobox "按决策意图筛选" [ref=e128]:
+              - option "全部决策" [selected]
+          - generic [ref=e129]:
+            - generic [ref=e130]: —
+            - paragraph [ref=e131]: 还没有可回看的决策记录。

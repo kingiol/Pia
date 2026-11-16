@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "snapshot_seq": {
+      "title": "Snapshot Seq",
+      "type": "integer"
+    },
+    "next_after_seq": {
+      "title": "Next After Seq",
+      "type": "integer"
+    },
+    "has_more": {
+      "title": "Has More",
+      "type": "boolean"
+    },
+    "completeness": {
+      "enum": [
+        "recorded",
+        "legacy_incomplete"
+      ],
+      "title": "Completeness",
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "stage_id": {
+            "title": "Stage Id",
+            "type": "string"
+          },
+          "attempt": {
+            "default": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "skipped",
+              "failed",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started At"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duration Ms"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "artifact_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "stage_id",
+          "label",
+          "status"
+        ],
+        "title": "FlowNode",
+        "type": "object"
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "edges": {
+      "items": {
+        "properties": {
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "sequence",
+              "depends_on",
+              "fallback",
+              "produces"
+            ],
+            "title": "Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "relation"
+        ],
+        "title": "FlowEdge",
+        "type": "object"
+      },
+      "title": "Edges",
+      "type": "array"
+    }
+  },
+  "required": [
+    "task_id",
+    "snapshot_seq",
+    "next_after_seq",
+    "has_more",
+    "completeness",
+    "nodes",
+    "edges"
+  ],
+  "title": "RunFlow",
+  "type": "object"
+}

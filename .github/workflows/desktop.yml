@@ -1,0 +1,148 @@
+name: desktop
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+jobs:
+  contracts-and-runtime:
+    if: github.event_name != 'workflow_call'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - id: changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$(git hash-object -t tree /dev/null)"
+          fi
+          node scripts/ci_changes.mjs "$BASE" "$HEAD" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: steps.changes.outputs.runtime == 'true' || steps.changes.outputs.contracts == 'true'
+        run: |
+          python -m pip install -e .
+          ./scripts/test-runtime.sh
+          python scripts/generate_ts_client.py --check
+      - if: steps.changes.outputs.docs == 'true'
+        run: python scripts/check_docs.py
+
+  tauri:
+    if: github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            shell: bash
+          - os: windows-latest
+            shell: pwsh
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e .
+      - run: python -m pip install pyinstaller
+      - run: pnpm install --frozen-lockfile
+      - run: cargo install tauri-cli --version "^2"
+      - if: runner.os == 'Windows'
+        run: ./scripts/build-sidecar.ps1
+      - if: runner.os != 'Windows'
+        run: ./scripts/build-sidecar.sh
+      - if: runner.os == 'Windows'
+        run: ./scripts/desktop-build.ps1
+      - if: runner.os != 'Windows'
+        run: |
+          cd apps/desktop/src-tauri
+          cargo tauri build
+      - if: runner.os == 'Windows'
+        name: Verify Windows sidecar health
+        shell: pwsh
+        run: |
+          $sidecar = Get-ChildItem "apps/desktop/src-tauri/binaries" -Filter "pia-runtime-*.exe" | Select-Object -First 1
+          if (-not $sidecar) { throw "Windows sidecar was not produced" }
+          $health = (& $sidecar.FullName health --json --isolation-check | ConvertFrom-Json)
+          if ($health.status -ne "ok") { throw "Unexpected sidecar status: $($health.status)" }
+          if ($health.isolation.status -ne "ok") { throw "Sidecar isolation check failed" }
+      - if: runner.os == 'Windows'
+        name: Run Windows packaged acceptance
+        shell: pwsh
+        run: ./scripts/windows-acceptance.ps1
+      - if: runner.os == 'Windows'
+        name: Run Windows native notification smoke
+        shell: pwsh
+        run: ./scripts/native-notification-smoke.ps1
+      - if: runner.os != 'Windows'
+        name: Verify macOS sidecar health
+        run: |
+          sidecar="$(find apps/desktop/src-tauri/target/release/bundle/macos/Pia.app/Contents/MacOS -maxdepth 1 -type f \( -name 'pia-runtime' -o -name 'pia-runtime-*' \) -print -quit)"
+          test -n "$sidecar"
+          "$sidecar" health --json --isolation-check | python -c 'import json,sys; h=json.load(sys.stdin); assert h["status"] == "ok" and h["isolation"]["status"] == "ok"'
+      - if: runner.os == 'Windows'
+        name: Create Windows release manifest
+        shell: pwsh
+        run: |
+          python scripts/release_manifest.py `
+            --root . `
+            --output .pia/release/manifest.json `
+            apps/desktop/src-tauri/target/release/bundle/msi `
+            apps/desktop/src-tauri/binaries
+      - if: runner.os != 'Windows'
+        name: Create macOS release manifest
+        run: ./scripts/release-manifest.sh
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pia-windows-${{ runner.arch }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/binaries/*.exe
+            .pia/release/manifest.json
+          if-no-files-found: error
+      - if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pia-macos-${{ runner.arch }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app
+            apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            .pia/release/manifest.json
+          if-no-files-found: error
+
+  android:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build Android debug APK
+        run: ./apps/android/gradlew --no-daemon --project-dir apps/android :app:assembleDebug

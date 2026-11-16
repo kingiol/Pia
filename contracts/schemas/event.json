@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Event",
+  "type": "object",
+  "required": ["event_type", "payload"],
+  "properties": {
+    "event_type": {"enum": ["MarketClose", "MarketBreadthChanged", "PriceVolumeAnomaly", "FilingPublished", "PortfolioRiskChanged", "DataQualityDegraded"]},
+    "dedupe_key": {"type": ["string", "null"]},
+    "payload": {"type": "object"}
+  }
+}

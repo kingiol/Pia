@@ -1,0 +1,7 @@
+{
+  "name": "Stock Researcher",
+  "prompt_version": "research-v1",
+  "tools": ["search_filings", "search_news", "get_company_profile"],
+  "minimum_evidence": 3,
+  "timeout_seconds": 60
+}

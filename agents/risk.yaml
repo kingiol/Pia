@@ -1,0 +1,7 @@
+{
+  "name": "Risk / Rules Agent",
+  "prompt_version": "risk-v1",
+  "tools": ["check_rule_violations", "request_human_approval"],
+  "minimum_evidence": 1,
+  "timeout_seconds": 30
+}

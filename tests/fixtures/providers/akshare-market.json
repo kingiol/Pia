@@ -1,0 +1,9 @@
+{
+  "provider_id": "akshare",
+  "provider_version": "fixture-1",
+  "adapter_version": "0.1.0",
+  "capabilities": ["daily_bars", "market_breadth", "trading_calendar"],
+  "supports_point_in_time": true,
+  "supports_replay": true,
+  "health_status": "healthy"
+}

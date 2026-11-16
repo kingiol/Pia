@@ -1,0 +1,7 @@
+{
+  "name": "Bull Case Analyst",
+  "prompt_version": "bull-v1",
+  "tools": ["get_market_snapshot", "get_task_trace"],
+  "minimum_evidence": 2,
+  "timeout_seconds": 45
+}

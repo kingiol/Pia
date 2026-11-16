@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "completion": {
+      "enum": [
+        "complete",
+        "partial",
+        "none",
+        "unknown"
+      ],
+      "title": "Completion",
+      "type": "string"
+    },
+    "degraded": {
+      "title": "Degraded",
+      "type": "boolean"
+    },
+    "missing_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Capabilities",
+      "type": "array"
+    },
+    "reasons": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "PROVIDER_FALLBACK",
+              "LAST_GOOD_SNAPSHOT",
+              "STALE_DATA",
+              "CAPABILITY_UNAVAILABLE",
+              "OPTIONAL_STAGE_FAILED",
+              "STAGE_TIMEOUT",
+              "TOKEN_BUDGET_EXCEEDED",
+              "COST_BUDGET_EXCEEDED",
+              "LLM_STREAM_INTERRUPTED",
+              "CONTEXT_INCOMPLETE",
+              "LEGACY_RESULT_UNKNOWN"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stage Id"
+          },
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Capability"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "artifact_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "required",
+          "retryable"
+        ],
+        "title": "ResultReason",
+        "type": "object"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "quality_summary": {
+      "enum": [
+        "verified",
+        "partial",
+        "stale",
+        "unavailable"
+      ],
+      "title": "Quality Summary",
+      "type": "string"
+    },
+    "context_pack_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Context Pack Id"
+    },
+    "policy_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Policy Version"
+    },
+    "action_eligible": {
+      "default": false,
+      "title": "Action Eligible",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "completion",
+    "degraded",
+    "quality_summary"
+  ],
+  "title": "ResultMetadata",
+  "type": "object"
+}

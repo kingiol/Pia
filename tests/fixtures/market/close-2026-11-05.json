@@ -1,0 +1,23 @@
+{
+  "snapshot_id": "snap_20261105_close_fixture",
+  "as_of": "2026-11-05",
+  "observed_at": "2026-11-05T16:10:00+08:00",
+  "source": "fixture",
+  "quality": "verified",
+  "breadth": 0.62,
+  "index_trend": "up",
+  "volatility": 0.22,
+  "indices": [
+    {"symbol": "000001.SH", "name": "SSE Composite", "close": 3976.23, "change_pct": 0.84},
+    {"symbol": "399001.SZ", "name": "SZSE Component", "close": 13142.11, "change_pct": 1.21}
+  ],
+  "sectors": [
+    {"name": "半导体", "change_pct": 2.8, "breadth": 0.77},
+    {"name": "医药", "change_pct": 1.4, "breadth": 0.64},
+    {"name": "银行", "change_pct": -0.2, "breadth": 0.42}
+  ],
+  "instruments": [
+    {"symbol": "600000.SH", "name": "浦发银行", "asset_type": "stock", "board": "main", "is_st": false, "suspended": false, "listed_days": 6200, "close": 12.44, "change_pct": 1.15, "average_turnover": 180000000},
+    {"symbol": "510300.SH", "name": "沪深300ETF", "asset_type": "etf", "board": "etf", "is_st": false, "suspended": false, "listed_days": 3200, "close": 4.21, "change_pct": 0.65, "average_turnover": 420000000}
+  ]
+}

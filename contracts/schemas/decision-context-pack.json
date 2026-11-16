@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "pack_id": {
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "input_binding_id": {
+      "title": "Input Binding Id",
+      "type": "string"
+    },
+    "source_pack_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Pack Id"
+    },
+    "analysis_as_of": {
+      "title": "Analysis As Of",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "subject": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Subject"
+    },
+    "trigger_type": {
+      "title": "Trigger Type",
+      "type": "string"
+    },
+    "data_mode": {
+      "enum": [
+        "fixture",
+        "live"
+      ],
+      "title": "Data Mode",
+      "type": "string"
+    },
+    "execution_mode": {
+      "default": "run",
+      "enum": [
+        "run",
+        "replay"
+      ],
+      "title": "Execution Mode",
+      "type": "string"
+    },
+    "profile_snapshot": {
+      "additionalProperties": true,
+      "title": "Profile Snapshot",
+      "type": "object"
+    },
+    "rule_snapshot": {
+      "additionalProperties": true,
+      "title": "Rule Snapshot",
+      "type": "object"
+    },
+    "confirmed_memories": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Confirmed Memories",
+      "type": "array"
+    },
+    "blocks": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "verified",
+              "partial",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "As Of"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Observed At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expires At"
+          },
+          "snapshot_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Snapshot Ids",
+            "type": "array"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "data": {
+            "title": "Data"
+          },
+          "missing_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Fields",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "required",
+          "content_hash",
+          "data"
+        ],
+        "title": "ContextBlock",
+        "type": "object"
+      },
+      "title": "Blocks",
+      "type": "object"
+    },
+    "evidence": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Versions",
+      "type": "object"
+    },
+    "content_hash": {
+      "title": "Content Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack_id",
+    "task_id",
+    "input_binding_id",
+    "analysis_as_of",
+    "created_at",
+    "subject",
+    "trigger_type",
+    "data_mode",
+    "profile_snapshot",
+    "rule_snapshot",
+    "confirmed_memories",
+    "blocks",
+    "evidence",
+    "versions",
+    "content_hash"
+  ],
+  "title": "DecisionContextPack",
+  "type": "object"
+}

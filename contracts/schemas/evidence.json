@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evidence",
+  "type": "object",
+  "required": ["source", "title", "observed_at", "as_of", "quality"],
+  "properties": {
+    "source": {"type": "string"},
+    "provider_id": {"type": ["string", "null"]},
+    "provenance": {"type": "object"},
+    "title": {"type": "string"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "as_of": {"type": "string", "format": "date"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "quality": {"enum": ["verified", "partial", "stale", "unavailable"]},
+    "excerpt": {"type": "string"},
+    "snapshot_id": {"type": "string"},
+    "used_by": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

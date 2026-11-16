@@ -1,0 +1,42 @@
+name: provider-freshness
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Provider to check"
+        required: true
+        default: "akshare"
+        type: choice
+        options:
+          - akshare
+          - tushare
+      lookback_days:
+        description: "Number of recent provider trading days to verify"
+        required: true
+        default: "5"
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PIA_DATA_PROVIDER: ${{ inputs.provider || 'akshare' }}
+      PIA_FRESHNESS_LOOKBACK_DAYS: ${{ inputs.lookback_days || '5' }}
+      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Run provider freshness gate
+        run: ./scripts/provider-freshness-e2e.sh

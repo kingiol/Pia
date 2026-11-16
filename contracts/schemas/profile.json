@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InvestorProfile",
+  "type": "object",
+  "required": ["id", "user_id", "version", "payload", "created_at"],
+  "properties": {
+    "id": {"type": "string"},
+    "user_id": {"type": "string"},
+    "version": {"type": "integer", "minimum": 1},
+    "payload": {
+      "type": "object",
+      "required": ["risk_tolerance", "investment_objective", "allowed_asset_types", "universe"],
+      "properties": {
+        "risk_tolerance": {"type": "string"},
+        "investment_objective": {"type": "string"},
+        "allowed_asset_types": {"type": "array", "items": {"type": "string"}},
+        "universe": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

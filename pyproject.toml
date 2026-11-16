@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pia-local-runtime"
+version = "0.1.0"
+description = "Local-first runtime for Pia Personal Investment Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=1.0",
+    "akshare>=1.20,<2",
+    "langgraph>=1.2,<2",
+    "pydantic>=2.14,<3",
+    "psycopg[binary]>=3.2,<4",
+    "tushare>=1.4,<2",
+]
+
+[project.scripts]
+pia = "pia_runtime.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["packages-py/pia_runtime"]
+
+[tool.pytest.ini_options]
+pythonpath = ["packages-py/pia_runtime"]
+testpaths = ["tests"]

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SyncResponse",
+  "type": "object",
+  "required": ["cursor", "next_cursor", "has_more", "changes"],
+  "properties": {
+    "cursor": {"type": "integer", "minimum": 0},
+    "next_cursor": {"type": "integer", "minimum": 0},
+    "has_more": {"type": "boolean"},
+    "changes": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": false
+}

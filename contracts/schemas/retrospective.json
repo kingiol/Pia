@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Retrospective",
+  "type": "object",
+  "required": [
+    "id",
+    "task_id",
+    "user_id",
+    "action_taken",
+    "outcome",
+    "notes",
+    "observed_at",
+    "created_at"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "task_id": { "type": "string" },
+    "user_id": { "type": "string" },
+    "action_taken": { "type": "string", "minLength": 1 },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" },
+        "horizon": {
+          "type": "string",
+          "enum": ["T+5", "T+20", "USER_RECORDED"]
+        },
+        "return_pct": { "type": ["number", "null"] },
+        "benchmark_return_pct": { "type": ["number", "null"] },
+        "excess_return_pct": { "type": ["number", "null"] },
+        "market_regime": { "type": "string" },
+        "position_size_pct": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "notes": { "type": "string" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "rule_snapshot_id": { "type": ["string", "null"] },
+    "data_snapshot_id": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

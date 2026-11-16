@@ -1,0 +1,7 @@
+{
+  "name": "Research Manager",
+  "prompt_version": "research-manager-v1",
+  "tools": ["get_task_trace", "save_evidence", "request_human_approval", "schedule_follow_up"],
+  "minimum_evidence": 3,
+  "timeout_seconds": 60
+}

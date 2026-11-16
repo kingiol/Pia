@@ -1,0 +1,14 @@
+{
+  "task_input": {
+    "trigger_type": "MarketClose",
+    "target": {"as_of": "2026-11-05", "symbols": ["600000.SH", "510300.SH"]},
+    "market_fixture": "tests/fixtures/market/close-2026-11-05.json",
+    "portfolio_fixture": "tests/fixtures/portfolio/default.json"
+  },
+  "expected": {
+    "data_quality": "verified",
+    "rule_snapshot_id": "ruleset_v1",
+    "decision_status": "BLOCKED",
+    "required_reasons": ["POSITION_LIMIT_EXCEEDED", "ETF_POSITION_LIMIT"]
+  }
+}

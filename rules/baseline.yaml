@@ -1,0 +1,17 @@
+{
+  "version": "v1",
+  "data_max_delay_trading_days": 2,
+  "new_listing_observation_days": 60,
+  "max_position_weight": 0.10,
+  "max_sector_weight": 0.30,
+  "max_etf_weight": 0.25,
+  "drawdown_warning": 0.08,
+  "drawdown_limit": 0.12,
+  "critical_drawdown": 0.20,
+  "min_average_turnover": 10000000,
+  "market_gate": {
+    "breadth_min": 0.35,
+    "index_trend_required": true,
+    "volatility_max": 0.45
+  }
+}

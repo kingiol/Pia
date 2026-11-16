@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "opinion_id": {
+      "title": "Opinion Id",
+      "type": "string"
+    },
+    "source_opinion_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Opinion Id"
+    },
+    "agent_name": {
+      "title": "Agent Name",
+      "type": "string"
+    },
+    "pack_id": {
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "subject": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Subject"
+    },
+    "claim_key": {
+      "title": "Claim Key",
+      "type": "string"
+    },
+    "dimension": {
+      "enum": [
+        "market",
+        "portfolio",
+        "technical",
+        "fundamentals",
+        "sources",
+        "risk"
+      ],
+      "title": "Dimension",
+      "type": "string"
+    },
+    "stance": {
+      "enum": [
+        "support",
+        "oppose",
+        "neutral"
+      ],
+      "title": "Stance",
+      "type": "string"
+    },
+    "evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "computed",
+        "llm",
+        "fixture",
+        "stub"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "opinion_id",
+    "agent_name",
+    "pack_id",
+    "subject",
+    "claim_key",
+    "dimension",
+    "stance",
+    "evidence_ids",
+    "rationale",
+    "origin"
+  ],
+  "title": "AgentOpinion",
+  "type": "object"
+}

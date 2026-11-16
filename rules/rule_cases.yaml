@@ -1,0 +1,9 @@
+{
+  "cases": [
+    {"name": "fresh_allowed", "data_quality": "verified", "projected_weight": 0.05, "sector_weight": 0.12, "drawdown": 0.02, "breadth": 0.60, "expected": "WATCH"},
+    {"name": "stale_data", "data_quality": "stale", "projected_weight": 0.05, "sector_weight": 0.12, "drawdown": 0.02, "breadth": 0.60, "expected": "BLOCKED"},
+    {"name": "position_limit", "data_quality": "verified", "projected_weight": 0.15, "sector_weight": 0.12, "drawdown": 0.02, "breadth": 0.60, "expected": "BLOCKED"},
+    {"name": "critical_drawdown", "data_quality": "verified", "projected_weight": 0.05, "sector_weight": 0.12, "drawdown": 0.21, "breadth": 0.60, "expected": "BLOCKED"},
+    {"name": "market_gate", "data_quality": "verified", "projected_weight": 0.05, "sector_weight": 0.12, "drawdown": 0.02, "breadth": 0.20, "expected": "NO_ACTION"}
+  ]
+}

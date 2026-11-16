@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PortfolioSnapshot",
+  "type": "object",
+  "required": ["snapshot_id", "user_id", "as_of", "source", "quality", "cash", "total_value", "drawdown", "positions"],
+  "properties": {
+    "snapshot_id": {"type": "string"},
+    "user_id": {"type": "string"},
+    "as_of": {"type": "string", "format": "date"},
+    "source": {"type": "string"},
+    "quality": {"enum": ["verified", "partial", "stale", "unavailable"]},
+    "cash": {"type": "number"},
+    "total_value": {"type": "number"},
+    "drawdown": {"type": "number"},
+    "positions": {"type": "array", "items": {"type": "object"}}
+  }
+}

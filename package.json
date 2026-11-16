@@ -1,0 +1,35 @@
+{
+  "name": "pia",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.21.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:desktop": "node --test scripts/runtime-connection.test.mjs scripts/credential-settings.test.mjs",
+    "dev": "vite --config apps/desktop/vite.config.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "debug:desktop:local": "PIA_DATA_PROVIDER=akshare VITE_DESKTOP_LOCAL_ONLY=1 ./scripts/dev.sh desktop",
+    "debug:desktop:local:fixture": "PIA_DATA_PROVIDER=fixture VITE_DESKTOP_LOCAL_ONLY=1 ./scripts/dev.sh desktop",
+    "debug:desktop": "VITE_DESKTOP_LOCAL_ONLY=0 ./scripts/dev.sh desktop",
+    "build": "vite build --config apps/desktop/vite.config.ts",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "icons:android": "node scripts/generate_phosphor_android_icons.mjs",
+    "preview": "vite preview --config apps/desktop/vite.config.ts",
+    "generate:contracts": "python3 scripts/generate_ts_client.py"
+  },
+  "devDependencies": {
+    "@phosphor-icons/core": "^2.1.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@tauri-apps/api": "^2.12.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}

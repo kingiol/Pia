@@ -1,0 +1,1721 @@
+openapi: 3.1.0
+info:
+  title: Pia Local Agent API
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8765
+paths:
+  /api/settings/deepseek:
+    get:
+      description: Local-only credential status. Requires a loopback peer and host, and a trusted Desktop origin when Origin is present. Never returns the secret.
+      responses:
+        "200":
+          description: Effective credential source
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeepSeekCredentialStatus"}
+        "401": {description: Authentication required when configured}
+        "403": {description: Not a trusted local credential request}
+    post:
+      description: Save to the system credential store and update subsequent model requests without restarting. A saved Key takes precedence over DEEPSEEK_API_KEY.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [api_key]
+              properties:
+                api_key: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+      responses:
+        "200":
+          description: Credential saved
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeepSeekCredentialStatus"}
+        "400": {description: Invalid credential request}
+        "401": {description: Authentication required when configured}
+        "403": {description: Not a trusted local credential request}
+    delete:
+      description: Clear the saved Key and immediately fall back to DEEPSEEK_API_KEY, if configured.
+      responses:
+        "200":
+          description: Saved credential cleared
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeepSeekCredentialStatus"}
+        "401": {description: Authentication required when configured}
+        "403": {description: Not a trusted local credential request}
+  /api/tasks/{task_id}/flow:
+    get:
+      parameters:
+        - {name: task_id, in: path, required: true, schema: {type: string}}
+        - {name: after_seq, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: snapshot_seq, in: query, schema: {type: integer, minimum: 0}}
+      responses:
+        "200":
+          description: Recorded execution flow with stable node upserts
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/run-flow.json"
+        "404": {description: Task not visible to the current user}
+  /api/tasks/{task_id}/export:
+    get:
+      parameters:
+        - {name: task_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Audited sanitized frozen context, decision and persisted result metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, context, decision, result_metadata]
+                properties:
+                  schema_version: {const: "1"}
+                  context: {$ref: "#/components/schemas/TaskContextResponse"}
+                  decision: {type: [object, "null"]}
+                  result_metadata: {$ref: "./schemas/result-metadata.json"}
+        "404": {description: Task not visible to the current user}
+  /api/screening-strategies:
+    get:
+      responses:
+        "200":
+          description: Registered immutable strategy versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strategies:
+                    type: array
+                    items: {$ref: "./schemas/screening-strategy.json"}
+  /api/candidate-scans:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [as_of]
+              properties:
+                as_of: {type: string, format: date}
+                strategy_id: {type: string, default: legacy_momentum_v1}
+                strategy_version: {type: string, default: 1.0.0}
+                fixture: {type: string}
+      responses:
+        "201":
+          description: Frozen scan and factor explanations
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CandidateListResponse"}
+        "400": {description: Invalid scan parameters}
+        "404": {description: Unknown strategy or version}
+  /api/candidate-scans/{scan_id}:
+    get:
+      parameters:
+        - {name: scan_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Frozen scan owned by the current user
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CandidateListResponse"}
+        "404": {description: Scan not visible to the current user}
+  /api/candidate-scans/{scan_id}/replay:
+    post:
+      parameters:
+        - {name: scan_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Offline replay from frozen scan inputs and the original strategy version
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CandidateListResponse"}
+        "409": {description: Strategy or input hash mismatch}
+        "404": {description: Scan or strategy version not found}
+  /api/health:
+    get:
+      responses:
+        "200":
+          description: Runtime health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/providers:
+    get:
+      responses:
+        "200":
+          description: Provider health and circuit state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderHealthResponse"
+  /api/metrics:
+    get:
+      responses:
+        "200":
+          description: Task latency and terminal success metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsResponse"
+  /api/rules:
+    get:
+      responses:
+        "200":
+          description: Active rules and immutable snapshot identifier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesResponse"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rules]
+              properties:
+                rules:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: New immutable ruleset version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesResponse"
+  /api/profile:
+    get:
+      responses:
+        "200":
+          description: Current investor profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestorProfile"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payload]
+              properties:
+                payload:
+                  $ref: "./schemas/profile.json"
+      responses:
+        "201":
+          description: New profile version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestorProfile"
+  /api/watchlists:
+    get:
+      responses:
+        "200":
+          description: User-scoped watchlists
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [watchlists]
+                properties:
+                  watchlists:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Watchlist"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchlistInput"
+      responses:
+        "201":
+          description: Saved watchlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Watchlist"
+  /api/memory:
+    get:
+      parameters:
+        - name: q
+          in: query
+          schema: {type: string}
+        - name: symbol
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+      responses:
+        "200":
+          description: User-scoped semantic memory search
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [memories]
+                properties:
+                  memories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SemanticMemory"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SemanticMemoryInput"
+      responses:
+        "201":
+          description: Saved semantic memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SemanticMemory"
+  /api/journal:
+    get:
+      parameters:
+        - name: symbol
+          in: query
+          schema: {type: string}
+        - name: intent
+          in: query
+          schema: {type: string}
+        - name: outcome_status
+          in: query
+          schema: {type: string}
+        - name: rule_snapshot_id
+          in: query
+          schema: {type: string}
+        - name: from
+          in: query
+          schema: {type: string}
+        - name: to
+          in: query
+          schema: {type: string}
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: User-scoped cross-task decision journal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalListResponse"
+  /api/journal/summary:
+    get:
+      parameters:
+        - name: symbol
+          in: query
+          schema: {type: string}
+        - name: intent
+          in: query
+          schema: {type: string}
+        - name: outcome_status
+          in: query
+          schema: {type: string}
+        - name: rule_snapshot_id
+          in: query
+          schema: {type: string}
+        - name: from
+          in: query
+          schema: {type: string}
+        - name: to
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: Deterministic cross-task journal summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalSummaryResponse"
+  /api/journal/patterns:
+    get:
+      parameters:
+        - name: symbol
+          in: query
+          schema: {type: string}
+        - name: intent
+          in: query
+          schema: {type: string}
+        - name: outcome_status
+          in: query
+          schema: {type: string}
+        - name: rule_snapshot_id
+          in: query
+          schema: {type: string}
+        - name: from
+          in: query
+          schema: {type: string}
+        - name: to
+          in: query
+          schema: {type: string}
+      responses:
+        "200":
+          description: Deterministic cross-task journal patterns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalPatternsResponse"
+  /api/journal/memory-candidates:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryCandidateMaterializeRequest"
+      responses:
+        "201":
+          description: Saved user-scoped derived memory candidate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryCandidate"
+  /api/journal/memory-candidates/{candidate_id}/review:
+    post:
+      parameters:
+        - name: candidate_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryCandidateReviewRequest"
+      responses:
+        "200":
+          description: Reviewed user-scoped memory candidate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryCandidate"
+  /api/journal/memory-candidates/{candidate_id}/usage:
+    get:
+      parameters:
+        - name: candidate_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: User-scoped memory candidate usage and task references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryCandidateUsageResponse"
+  /api/journal/memory-candidates/{candidate_id}/feedback:
+    post:
+      parameters:
+        - name: candidate_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryCandidateFeedbackRequest"
+      responses:
+        "200":
+          description: Recorded user feedback for the latest or selected memory usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryCandidateFeedbackResponse"
+  /api/portfolio:
+    get:
+      responses:
+        "200":
+          description: Latest portfolio snapshot for the authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/portfolio.json"
+  /api/market:
+    get:
+      responses:
+        "200":
+          description: Latest market snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/audit:
+    get:
+      responses:
+        "200":
+          description: Append-only audit records for the authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditResponse"
+  /api/scheduler:
+    get:
+      responses:
+        "200":
+          description: Local scheduler status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerResponse"
+  /api/scheduler/start:
+    post:
+      responses:
+        "200":
+          description: Scheduler started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerResponse"
+  /api/scheduler/stop:
+    post:
+      responses:
+        "200":
+          description: Scheduler stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchedulerResponse"
+  /api/data/sync:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [as_of]
+              properties:
+                as_of: {type: string, format: date}
+                symbols:
+                  type: array
+                  items: {type: string}
+      responses:
+        "202":
+          description: Market data synchronization accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataSyncResponse"
+  /api/orders/preview:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderRequest"
+      responses:
+        "200":
+          description: Paper-order preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderPreviewResponse"
+  /api/orders/paper:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderRequest"
+      responses:
+        "201":
+          description: Paper-only order receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaperOrderResponse"
+  /api/tasks:
+    get:
+      responses:
+        "200":
+          description: Research tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+  /api/tasks/{task_id}:
+    get:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Task detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDetailResponse"
+  /api/tasks/{task_id}/context:
+    get:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: view
+          in: query
+          schema: {type: string, enum: [overview, full], default: overview}
+      responses:
+        "200":
+          description: Frozen task context; overview by default, full requires task ownership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskContextResponse"
+  /api/tasks/{task_id}/data:
+    get:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Persisted analytical snapshots and raw provider payloads used by the task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDataResponse"
+        "404":
+          description: Task not found for the authenticated user
+  /api/tasks/{task_id}/retrospectives:
+    get:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Historical actions and outcomes recorded for a task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetrospectiveListResponse"
+        "404":
+          description: Task not found for the authenticated user
+    post:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetrospectiveRequest"
+      responses:
+        "201":
+          description: Retrospective record created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Retrospective"
+  /api/tasks/{task_id}/events:
+    get:
+      responses:
+        "200":
+          description: Server-sent event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /api/tasks/{task_id}/lease:
+    get:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Acquired task lease
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaseResponse"
+  /api/leases/{lease_id}/heartbeat:
+    post:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lease_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Lease renewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaseResponse"
+  /api/leases/{lease_id}/release:
+    post:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lease_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Lease released
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+  /api/tasks/{task_id}/approve:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalRequest"
+      responses:
+        "200":
+          description: Approval recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskDetailResponse"
+  /api/tasks/{task_id}/retry:
+    post:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "202":
+          description: Retry started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+  /api/tasks/{task_id}/replay:
+    post:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "202":
+          description: Replay task created with the original task as parent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+  /api/tasks/{task_id}/cancel:
+    post:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string}
+      responses:
+        "200":
+          description: Task cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+  /api/tasks/{task_id}/takeover:
+    post:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: {type: string}
+      responses:
+        "200":
+          description: Manual takeover recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskContextResponse"
+  /api/tasks/{task_id}/pause:
+    post:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Task paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+  /api/tasks/{task_id}/resume:
+    post:
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Task resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+  /api/events:
+    get:
+      responses:
+        "200":
+          description: Recent events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventListResponse"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Event"
+      responses:
+        "202":
+          description: Event accepted or deduplicated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventResponse"
+  /api/portfolio/import:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortfolioImportRequest"
+      responses:
+        "201":
+          description: Portfolio snapshot imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioResponse"
+  /api/candidates:
+    get:
+      parameters:
+        - name: as_of
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - name: fixture
+          in: query
+          required: false
+          schema: {type: string}
+      responses:
+        "200":
+          description: Replayable ranked candidate scan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CandidateListResponse"
+  /api/notifications:
+    get:
+      parameters:
+        - name: unread
+          in: query
+          schema: {type: string, enum: ["0", "1"]}
+      responses:
+        "200":
+          description: In-app notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+  /api/notifications/{notification_id}/read:
+    post:
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Notification marked read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+  /api/notifications/{notification_id}/deliveries:
+    get:
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Notification delivery receipts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationDeliveryListResponse"
+        "404":
+          description: Notification not found for the authenticated user
+  /api/devices:
+    get:
+      responses:
+        "200":
+          description: Registered devices for the authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceListResponse"
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/device.json"
+      responses:
+        "201":
+          description: Device registration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceResponse"
+  /api/devices/{device_id}:
+    delete:
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Device unregistered
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, device_id]
+                properties:
+                  status: {type: string, enum: [unregistered]}
+                  device_id: {type: string}
+  /api/sync:
+    get:
+      parameters:
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+      responses:
+        "200":
+          description: Incremental audit-backed sync changes
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/sync.json"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    DeepSeekCredentialStatus:
+      type: object
+      additionalProperties: false
+      required: [configured, source]
+      properties:
+        configured: {type: boolean}
+        source: {type: string, enum: [saved, environment, none]}
+    CreateTaskRequest:
+      type: object
+      properties:
+        trigger_type: {type: string}
+        target: {type: object}
+        fixture: {type: object}
+    ApprovalRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [APPROVE, REJECT, NO_ACTION, REQUEST_MORE_RESEARCH, MARK_AS_WATCH]
+        notes: {type: string}
+    Event:
+      $ref: "./schemas/event.json"
+    PortfolioImportRequest:
+      type: object
+      required: [format, content]
+      properties:
+        format: {type: string, enum: [csv, xlsx, excel, manual]}
+        content: {}
+    InvestorProfile:
+      $ref: "./schemas/profile.json"
+    PortfolioSnapshot:
+      $ref: "./schemas/portfolio.json"
+    DeviceRegistration:
+      $ref: "./schemas/device.json"
+    SyncResponse:
+      $ref: "./schemas/sync.json"
+    TaskResponse:
+      type: object
+      required: [task]
+      properties:
+        task:
+          $ref: "./schemas/task.json"
+      additionalProperties: false
+    RulesResponse:
+      type: object
+      required: [rules, rule_snapshot_id]
+      properties:
+        rules:
+          type: object
+          additionalProperties: true
+        rule_snapshot_id: {type: string}
+      additionalProperties: false
+    TaskListResponse:
+      type: object
+      required: [tasks]
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "./schemas/task.json"
+      additionalProperties: false
+    TaskDetailResponse:
+      type: object
+      required: [task, decision, evidence, trace, approvals, retrospectives, events]
+      properties:
+        result_metadata:
+          $ref: "./schemas/result-metadata.json"
+        llm_ledger:
+          type: object
+          additionalProperties: true
+        task:
+          $ref: "./schemas/task.json"
+        decision:
+          oneOf:
+            - $ref: "./schemas/decision.json"
+            - type: "null"
+        evidence:
+          type: array
+          items:
+            $ref: "./schemas/evidence.json"
+        trace:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        approvals:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        retrospectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/Retrospective"
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: true
+    Retrospective:
+      $ref: "./schemas/retrospective.json"
+    RetrospectiveRequest:
+      type: object
+      required: [action_taken, outcome]
+      properties:
+        action_taken: {type: string, minLength: 1}
+        outcome:
+          type: object
+          properties:
+            status: {type: string}
+            horizon: {type: string, enum: [T+5, T+20, USER_RECORDED]}
+            return_pct: {type: ["number", "null"]}
+            benchmark_return_pct: {type: ["number", "null"]}
+            excess_return_pct: {type: ["number", "null"]}
+            market_regime: {type: string}
+            position_size_pct: {type: ["number", "null"]}
+          additionalProperties: true
+        notes: {type: string}
+        observed_at: {type: ["string", "null"], format: date-time}
+      additionalProperties: false
+    RetrospectiveListResponse:
+      type: object
+      required: [retrospectives]
+      properties:
+        retrospectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/Retrospective"
+      additionalProperties: false
+    JournalListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [decision_record, retrospectives, evidence_summary, approvals, replay_refs]
+            properties:
+              decision_record:
+                type: object
+                additionalProperties: true
+              retrospectives:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              evidence_summary:
+                type: object
+                additionalProperties: true
+              approvals:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+              replay_refs:
+                type: object
+                additionalProperties: true
+            additionalProperties: false
+        next_cursor:
+          type: ["string", "null"]
+      additionalProperties: false
+    JournalSummaryResponse:
+      type: object
+      required: [decision_count, retrospective_count, intent_counts, action_counts, outcome_status_counts, comparable_outcome_count, rule_snapshot_counts, warnings]
+      properties:
+        decision_count: {type: integer}
+        retrospective_count: {type: integer}
+        intent_counts:
+          type: object
+          additionalProperties: {type: integer}
+        action_counts:
+          type: object
+          additionalProperties: {type: integer}
+        outcome_status_counts:
+          type: object
+          additionalProperties: {type: integer}
+        comparable_outcome_count: {type: integer}
+        average_return_pct: {type: ["number", "null"]}
+        rule_snapshot_counts:
+          type: object
+          additionalProperties: {type: integer}
+        warnings:
+          type: array
+          items: {type: string}
+      additionalProperties: false
+    JournalPatternsResponse:
+      type: object
+      required: [intent_patterns, rule_patterns, memory_candidates, warnings]
+      properties:
+        intent_patterns:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        rule_patterns:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        memory_candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        warnings:
+          type: array
+          items: {type: string}
+      additionalProperties: false
+    MemoryCandidateMaterializeRequest:
+      type: object
+      required: [candidate_key]
+      properties:
+        candidate_key: {type: string, minLength: 1}
+      additionalProperties: false
+    MemoryCandidateReviewRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [CONFIRM, EDIT_AND_CONFIRM, REJECT, ARCHIVE]
+        title: {type: ["string", "null"]}
+        content: {type: ["string", "null"]}
+        notes: {type: string}
+      additionalProperties: false
+    MemoryCandidate:
+      type: object
+      required:
+        - id
+        - user_id
+        - candidate_key
+        - source_type
+        - status
+        - kind
+        - title
+        - content
+        - sample_size
+        - comparable_outcome_count
+        - source_task_ids
+        - source_rule_snapshot_ids
+        - created_at
+        - updated_at
+      properties:
+        id: {type: string}
+        user_id: {type: string}
+        candidate_key: {type: string}
+        source_type: {type: string, enum: [SYSTEM_DERIVED]}
+        status: {type: string, enum: [CANDIDATE, CONFIRMED, REJECTED, ARCHIVED]}
+        kind: {type: string}
+        title: {type: string}
+        content: {type: string}
+        sample_size: {type: integer, minimum: 0}
+        comparable_outcome_count: {type: integer, minimum: 0}
+        average_return_pct: {type: ["number", "null"]}
+        source_task_ids: {type: array, items: {type: string}}
+        source_rule_snapshot_ids: {type: array, items: {type: string}}
+        as_of: {type: ["string", "null"], format: date}
+        observed_at: {type: ["string", "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at:
+          type: string
+          format: date-time
+        reviewed_at: {type: ["string", "null"], format: date-time}
+        reviewed_by: {type: ["string", "null"]}
+        review_action:
+          type: ["string", "null"]
+          enum: [CONFIRM, EDIT_AND_CONFIRM, REJECT, ARCHIVE, null]
+        review_notes: {type: string}
+      additionalProperties: false
+    MemoryCandidateUsageResponse:
+      type: object
+      required: [candidate, usages, feedback, feedback_summary]
+      properties:
+        candidate:
+          $ref: "#/components/schemas/MemoryCandidate"
+        usages:
+          type: array
+          items:
+            type: object
+            required: [id, memory_candidate_id, task_id, user_id, usage_type, used_at]
+            properties:
+              id: {type: string}
+              memory_candidate_id: {type: string}
+              task_id: {type: string}
+              user_id: {type: string}
+              usage_type: {type: string}
+              used_at: {type: string, format: date-time}
+              task_created_at: {type: string, format: date-time}
+              task_status: {type: string}
+            additionalProperties: false
+        feedback:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        feedback_summary:
+          $ref: "#/components/schemas/MemoryFeedbackSummary"
+      additionalProperties: false
+    MemoryCandidateFeedbackRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          type: string
+          enum: [HELPFUL, NOT_HELPFUL, UNCERTAIN]
+        usage_id: {type: ["string", "null"]}
+        notes: {type: string}
+      additionalProperties: false
+    MemoryCandidateFeedbackResponse:
+      type: object
+      required: [feedback, feedback_summary]
+      properties:
+        feedback:
+          type: object
+          required: [id, memory_candidate_id, memory_candidate_usage_id, task_id, user_id, rating, notes, created_at, updated_at]
+          properties:
+            id: {type: string}
+            memory_candidate_id: {type: string}
+            memory_candidate_usage_id: {type: string}
+            task_id: {type: string}
+            user_id: {type: string}
+            rating: {type: string, enum: [HELPFUL, NOT_HELPFUL, UNCERTAIN]}
+            notes: {type: string}
+            created_at: {type: string, format: date-time}
+            updated_at:
+              type: string
+              format: date-time
+          additionalProperties: false
+        feedback_summary:
+          $ref: "#/components/schemas/MemoryFeedbackSummary"
+      additionalProperties: false
+    MemoryFeedbackSummary:
+      type: object
+      required: [feedback_count, helpful_count, not_helpful_count, uncertain_count, feedback_recommendation]
+      properties:
+        feedback_count: {type: integer, minimum: 0}
+        helpful_count: {type: integer, minimum: 0}
+        not_helpful_count: {type: integer, minimum: 0}
+        uncertain_count: {type: integer, minimum: 0}
+        feedback_recommendation:
+          type: string
+          enum: [NO_FEEDBACK, KEEP, REVIEW_SUGGESTED, ARCHIVE_SUGGESTED]
+      additionalProperties: false
+    TaskContextResponse:
+      type: object
+      required: [exported_at, task_detail, profile, rules, rule_snapshot_id, confirmed_memories]
+      properties:
+        exported_at: {type: string, format: date-time}
+        task_detail:
+          $ref: "#/components/schemas/TaskDetailResponse"
+        profile:
+          type: object
+          additionalProperties: true
+        rules:
+          type: object
+          additionalProperties: true
+        rule_snapshot_id: {type: string}
+        confirmed_memories:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryCandidate"
+        context_source:
+          type: string
+          enum: [frozen, legacy_incomplete]
+        context_pack:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+      additionalProperties: false
+    TaskDataResponse:
+      type: object
+      required: [task_id, snapshot_ids, bundles]
+      properties:
+        task_id: {type: string}
+        snapshot_ids:
+          type: array
+          items: {type: string}
+        bundles:
+          type: array
+          items:
+            type: object
+            required: [snapshot, raw_payloads]
+            properties:
+              snapshot:
+                type: object
+                additionalProperties: true
+              raw_payloads:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+            additionalProperties: false
+      additionalProperties: false
+    HealthResponse:
+      type: object
+      required: [status, runtime, provider, llm]
+      properties:
+        status: {type: string}
+        runtime: {type: string}
+        provider:
+          type: object
+          additionalProperties: true
+        llm:
+          type: object
+          additionalProperties: true
+        scheduler:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    ProviderHealthResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            type: object
+            required: [provider_id, status]
+            properties:
+              provider_id: {type: string}
+              status: {type: string}
+              capability_health:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    circuit_state: {type: string, enum: [closed, open, half_open]}
+                    consecutive_failures: {type: integer}
+                    cooldown_seconds: {type: number}
+                    latency_ms: {type: ["number", "null"]}
+                    last_success_at: {type: ["string", "null"]}
+                    last_failure_at: {type: ["string", "null"]}
+                  additionalProperties: true
+            additionalProperties: true
+      additionalProperties: false
+    MetricsResponse:
+      type: object
+      required: [task_total, terminal_success_rate, task_duration_p95_seconds, p95_within_timeout, system, llm_usage, observability]
+      properties:
+        user_id: {type: string}
+        task_counts:
+          type: object
+          additionalProperties: {type: integer}
+        task_total: {type: integer}
+        terminal_total: {type: integer}
+        terminal_success_rate: {type: ["number", "null"]}
+        task_duration_p95_seconds: {type: ["number", "null"]}
+        task_timeout_seconds: {type: integer}
+        p95_within_timeout: {type: boolean}
+        system:
+          type: object
+          required: [queue_depth, active_task_count, oldest_active_task_age_seconds, storage_bytes, database_backend]
+          properties:
+            queue_depth: {type: integer}
+            active_task_count: {type: integer}
+            oldest_active_task_age_seconds: {type: ["number", "null"]}
+            storage_bytes:
+              type: object
+              additionalProperties: {type: integer}
+            database_backend: {type: string, enum: [sqlite, postgres]}
+          additionalProperties: true
+        llm_usage:
+          type: object
+          additionalProperties: true
+        llm_ledger:
+          type: object
+          additionalProperties: true
+        observability:
+          type: object
+          properties:
+            provider_calls:
+              type: object
+              additionalProperties:
+                type: object
+                required: [provider_id, capability, method, call_count, error_count, error_rate, p95_ms, last_status]
+                properties:
+                  provider_id: {type: string}
+                  capability: {type: string}
+                  method: {type: string}
+                  call_count: {type: integer}
+                  error_count: {type: integer}
+                  error_rate: {type: number}
+                  p95_ms: {type: ["number", "null"]}
+                  last_error: {type: ["string", "null"]}
+                  last_status: {type: ["string", "null"], enum: ["ok", "error", null]}
+                additionalProperties: true
+          required: [provider_calls]
+          additionalProperties: true
+      additionalProperties: true
+    SchedulerResponse:
+      type: object
+      required: [enabled, timezone, close_time, last_dispatched_date]
+      properties:
+        enabled: {type: boolean}
+        timezone: {type: string}
+        close_time: {type: string}
+        last_dispatched_date: {type: ["string", "null"]}
+      additionalProperties: true
+    DataSyncResponse:
+      type: object
+      required: [as_of, quality, market_snapshot_quality, failures, counts]
+      properties:
+        as_of: {type: string, format: date}
+        quality: {type: string}
+        market_snapshot_quality: {type: string}
+        failures:
+          type: array
+          items: {type: object, additionalProperties: true}
+        counts:
+          type: object
+          additionalProperties: {type: integer}
+        market_quality:
+          type: object
+          required: [field_completeness, field_completeness_target, field_completeness_pass, missing]
+          properties:
+            field_completeness: {type: number}
+            field_completeness_target: {type: number}
+            field_completeness_pass: {type: boolean}
+            missing:
+              type: array
+              items: {type: string}
+          additionalProperties: true
+        snapshot_id: {type: string}
+        market_snapshot_source: {type: string}
+        requested_symbols:
+          type: array
+          items: {type: string}
+      additionalProperties: true
+    OrderRequest:
+      type: object
+      required: [symbol, side, quantity]
+      properties:
+        symbol: {type: string}
+        side: {type: string, enum: [BUY, SELL]}
+        quantity: {type: number, exclusiveMinimum: 0}
+        limit_price: {type: ["number", "null"], exclusiveMinimum: 0}
+        client_order_id: {type: ["string", "null"]}
+      additionalProperties: false
+    OrderPreviewResponse:
+      type: object
+      required: [status, provider_id, request, warnings, live_submit_enabled]
+      properties:
+        status: {type: string}
+        provider_id: {type: string}
+        request:
+          $ref: "#/components/schemas/OrderRequest"
+        estimated_value: {type: ["number", "null"]}
+        warnings:
+          type: array
+          items: {type: string}
+        live_submit_enabled: {type: boolean}
+      additionalProperties: false
+    PaperOrderResponse:
+      type: object
+      required: [order_id, status, provider_id, request, created_at]
+      properties:
+        order_id: {type: string}
+        status: {type: string}
+        provider_id: {type: string}
+        request:
+          $ref: "#/components/schemas/OrderRequest"
+        created_at: {type: string, format: date-time}
+        fill_price: {type: ["number", "null"]}
+      additionalProperties: false
+    LeaseResponse:
+      type: object
+      required: [lease_id, worker_id, expires_at]
+      properties:
+        task_id: {type: string}
+        lease_id: {type: string}
+        worker_id: {type: string}
+        expires_at: {type: string, format: date-time}
+      additionalProperties: false
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string}
+        lease_id: {type: string}
+        notification_id: {type: string}
+      additionalProperties: true
+    EventResponse:
+      type: object
+      required: [event_id, status]
+      properties:
+        event_id: {type: string}
+        status: {type: string}
+        task_id: {type: ["string", "null"]}
+      additionalProperties: false
+    EventListResponse:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: false
+    PortfolioResponse:
+      type: object
+      properties:
+        portfolio:
+          $ref: "./schemas/portfolio.json"
+      additionalProperties: true
+    CandidateListResponse:
+      type: object
+      required: [candidates]
+      properties:
+        scan_id: {type: string}
+        input_hash: {type: string}
+        user_id: {type: string}
+        strategy_id: {type: string}
+        strategy_version: {type: string}
+        strategy_hash: {type: string}
+        as_of: {type: string}
+        excluded:
+          type: array
+          items: {type: object, additionalProperties: true}
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: true
+    NotificationListResponse:
+      type: object
+      required: [notifications]
+      properties:
+        notifications:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: false
+    NotificationDeliveryListResponse:
+      type: object
+      required: [deliveries]
+      properties:
+        deliveries:
+          type: array
+          items:
+            type: object
+            required: [id, notification_id, user_id, provider_id, status, created_at]
+            properties:
+              id: {type: string}
+              notification_id: {type: string}
+              user_id: {type: string}
+              provider_id: {type: string}
+              status: {type: string}
+              detail: {type: ["string", "null"]}
+              created_at: {type: string, format: date-time}
+            additionalProperties: false
+      additionalProperties: false
+    DeviceListResponse:
+      type: object
+      required: [devices]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "./schemas/device.json"
+      additionalProperties: false
+    DeviceResponse:
+      type: object
+      required: [device_id, platform, active]
+      properties:
+        device_id: {type: string}
+        platform: {type: string}
+        device_name: {type: ["string", "null"]}
+        push_token: {type: ["string", "null"]}
+        active: {type: boolean}
+        user_id: {type: string}
+        created_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+      additionalProperties: true
+    WatchlistInput:
+      type: object
+      required: [name, symbols]
+      properties:
+        name: {type: string}
+        symbols:
+          type: array
+          items: {type: string}
+      additionalProperties: false
+    Watchlist:
+      allOf:
+        - $ref: "#/components/schemas/WatchlistInput"
+        - type: object
+          required: [id, user_id, created_at, updated_at]
+          properties:
+            id: {type: string}
+            user_id: {type: string}
+            created_at: {type: string, format: date-time}
+            updated_at:
+              type: string
+              format: date-time
+    SemanticMemoryInput:
+      type: object
+      required: [title, content]
+      properties:
+        kind: {type: string}
+        symbol: {type: ["string", "null"]}
+        title: {type: string}
+        content: {type: string}
+        source: {type: string}
+        as_of: {type: ["string", "null"], format: date}
+        observed_at: {type: ["string", "null"], format: date-time}
+        quality: {type: string, enum: [verified, partial, stale, unavailable]}
+      additionalProperties: false
+    SemanticMemory:
+      allOf:
+        - $ref: "#/components/schemas/SemanticMemoryInput"
+        - type: object
+          required: [id, user_id, kind, title, content, source, quality, created_at]
+          properties:
+            id: {type: string}
+            user_id: {type: string}
+            task_id: {type: ["string", "null"]}
+            created_at: {type: string, format: date-time}

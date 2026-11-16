@@ -1,0 +1,7 @@
+{
+  "name": "Investment Chief",
+  "prompt_version": "chief-v1",
+  "tools": ["get_market_snapshot", "get_portfolio_snapshot", "create_research_task"],
+  "minimum_evidence": 0,
+  "timeout_seconds": 30
+}

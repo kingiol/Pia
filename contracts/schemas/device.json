@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DeviceRegistration",
+  "type": "object",
+  "required": ["device_id", "platform"],
+  "properties": {
+    "device_id": {"type": "string", "minLength": 1},
+    "platform": {"type": "string", "enum": ["web", "macos", "windows", "ios", "android"]},
+    "device_name": {"type": ["string", "null"]},
+    "push_token": {"type": ["string", "null"]},
+    "user_id": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "last_seen_at": {"type": "string", "format": "date-time"},
+    "active": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

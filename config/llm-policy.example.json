@@ -1,0 +1,22 @@
+{
+  "schema_version": "1",
+  "routes": [
+    {
+      "route_id": "primary",
+      "provider_id": "compatible",
+      "endpoint": "https://llm.example.invalid/v1",
+      "model": "configured-model",
+      "credential_ref": "PIA_PRIMARY_LLM_KEY",
+      "priority": 10,
+      "capabilities": ["structured_output", "streaming", "tool_calls", "token_usage"],
+      "allowed_data_classes": ["market_public"],
+      "input_cost_per_1k": null,
+      "output_cost_per_1k": null,
+      "token_upper_bound": null
+    }
+  ],
+  "max_routes_per_stage": 2,
+  "max_http_attempts_per_stage": 6,
+  "task_budget_usd": null,
+  "user_daily_budget_usd": null
+}

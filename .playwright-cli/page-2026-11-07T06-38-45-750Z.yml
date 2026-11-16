@@ -1,0 +1,108 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - generic [ref=f1e6]: P
+      - generic [ref=f1e7]:
+        - strong [ref=f1e8]: Pia
+        - generic [ref=f1e9]: Research workspace
+    - generic [ref=f1e10]:
+      - generic [ref=f1e11]: Workspace
+      - button "O Overview" [ref=f1e12] [cursor=pointer]:
+        - generic [ref=f1e13]: O
+        - text: Overview
+      - button "M Market" [ref=f1e14] [cursor=pointer]:
+        - generic [ref=f1e15]: M
+        - text: Market
+      - button "P Portfolio" [ref=f1e16] [cursor=pointer]:
+        - generic [ref=f1e17]: P
+        - text: Portfolio
+      - button "R Research" [ref=f1e18] [cursor=pointer]:
+        - generic [ref=f1e19]: R
+        - text: Research
+    - generic [ref=f1e20]:
+      - generic [ref=f1e21]: Controls
+      - button "P Profile" [ref=f1e22] [cursor=pointer]:
+        - generic [ref=f1e23]: P
+        - text: Profile
+      - button "R Rules" [active] [ref=f1e24] [cursor=pointer]:
+        - generic [ref=f1e25]: R
+        - text: Rules
+      - button "D Data Health" [ref=f1e26] [cursor=pointer]:
+        - generic [ref=f1e27]: D
+        - text: Data Health
+      - button "A Audit" [ref=f1e28] [cursor=pointer]:
+        - generic [ref=f1e29]: A
+        - text: Audit
+      - button "N Notifications" [ref=f1e30] [cursor=pointer]:
+        - generic [ref=f1e31]: "N"
+        - text: Notifications
+    - generic [ref=f1e34]:
+      - strong [ref=f1e35]: Local runtime online
+      - generic [ref=f1e36]: deepseek-flash
+  - main [ref=f1e37]:
+    - generic [ref=f1e38]:
+      - generic [ref=f1e39]:
+        - generic [ref=f1e40]: Today
+        - heading "Rules" [level=1] [ref=f1e299]
+      - generic [ref=f1e42]:
+        - generic [ref=f1e43]: 2026-11-05 · Close
+        - generic [ref=f1e44]: Data healthy
+        - generic [ref=f1e46]: Notifications 0
+        - button "↻" [ref=f1e47] [cursor=pointer]
+        - button "+ New review" [ref=f1e48] [cursor=pointer]
+    - generic [ref=f1e49]:
+      - generic [ref=f1e50]:
+        - generic [ref=f1e51]: Active tasks
+        - strong [ref=f1e52]: "0"
+        - generic [ref=f1e53]: Trace updates live
+      - generic [ref=f1e54]:
+        - generic [ref=f1e55]: Awaiting approval
+        - strong [ref=f1e56]: "0"
+        - generic [ref=f1e57]: Human decision required
+      - generic [ref=f1e58]:
+        - generic [ref=f1e59]: Blocked today
+        - strong [ref=f1e60]: "1"
+        - generic [ref=f1e61]: Rules-first gate
+      - generic [ref=f1e62]:
+        - generic [ref=f1e63]: Rule snapshot
+        - strong [ref=f1e64]: v1
+        - generic [ref=f1e65]: Immutable per task
+    - generic [ref=f1e300]:
+      - generic [ref=f1e301]:
+        - generic [ref=f1e303]:
+          - generic [ref=f1e304]: Deterministic gates
+          - heading "Ruleset v1" [level=3] [ref=f1e305]
+        - textbox [ref=f1e306]: "{ \"critical_drawdown\": 0.2, \"data_max_delay_trading_days\": 2, \"drawdown_limit\": 0.12, \"drawdown_warning\": 0.08, \"market_gate\": { \"breadth_min\": 0.35, \"index_trend_required\": true, \"volatility_max\": 0.45 }, \"max_etf_weight\": 0.25, \"max_position_weight\": 0.1, \"max_sector_weight\": 0.3, \"min_average_turnover\": 10000000, \"new_listing_observation_days\": 60, \"version\": \"v1\" }"
+        - generic [ref=f1e307]:
+          - button "Save version" [ref=f1e308] [cursor=pointer]
+          - generic [ref=f1e309]: New versions apply only to new tasks; existing tasks keep their snapshot.
+      - generic [ref=f1e310]:
+        - generic [ref=f1e312]:
+          - generic [ref=f1e313]: Never decided by LLM
+          - heading "Selected task gate" [level=3] [ref=f1e314]
+        - generic [ref=f1e315]:
+          - generic [ref=f1e316]:
+            - generic [ref=f1e317]: BLOCKED
+            - generic [ref=f1e318]:
+              - strong [ref=f1e319]: POSITION_LIMIT_EXCEEDED
+              - paragraph [ref=f1e320]: 600000.SH weight exceeds the configured position limit.
+            - generic [ref=f1e321]: 0.3732 / <= 0.1
+          - generic [ref=f1e322]:
+            - generic [ref=f1e323]: BLOCKED
+            - generic [ref=f1e324]:
+              - strong [ref=f1e325]: ETF_POSITION_LIMIT
+              - paragraph [ref=f1e326]: 510300.SH weight exceeds the configured position limit.
+            - generic [ref=f1e327]: 0.3368 / <= 0.25
+          - generic [ref=f1e328]:
+            - generic [ref=f1e329]: BLOCKED
+            - generic [ref=f1e330]:
+              - strong [ref=f1e331]: SECTOR_CONCENTRATION
+              - paragraph [ref=f1e332]: Sector exposure for 银行 exceeds the configured limit.
+            - generic [ref=f1e333]: 0.3732 / <= 0.3
+          - generic [ref=f1e334]:
+            - generic [ref=f1e335]: BLOCKED
+            - generic [ref=f1e336]:
+              - strong [ref=f1e337]: SECTOR_CONCENTRATION
+              - paragraph [ref=f1e338]: Sector exposure for 宽基ETF exceeds the configured limit.
+            - generic [ref=f1e339]: 0.3368 / <= 0.3
+        - paragraph [ref=f1e340]: Showing the selected task's evaluated rules.

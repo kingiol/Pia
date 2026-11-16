@@ -1,0 +1,7 @@
+{
+  "name": "Decision Agent",
+  "prompt_version": "decision-v1",
+  "tools": ["get_task_trace", "check_rule_violations", "request_human_approval", "schedule_follow_up"],
+  "minimum_evidence": 3,
+  "timeout_seconds": 30
+}

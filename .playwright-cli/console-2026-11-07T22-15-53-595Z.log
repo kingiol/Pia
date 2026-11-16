@@ -1,0 +1,57 @@
+[      70ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[     121ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5176/favicon.ico:0
+[    1172ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[   20834ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[   25202ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[   59774ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[   81431ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[  246168ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[  268004ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[  435394ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[  466385ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[  485859ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[  485873ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/tasks:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/health:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/rules:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/market:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/portfolio:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/profile:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/watchlists:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/notifications?unread=0:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/tasks:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/health:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/rules:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/market:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/portfolio:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/profile:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/watchlists:0
+[  485876ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/notifications?unread=0:0
+[  510114ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[  772967ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[  794870ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[  845545ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[  864970ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[  887967ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[  887987ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/tasks:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/health:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/rules:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/market:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/portfolio:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/profile:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/watchlists:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/notifications?unread=0:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/tasks:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/health:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/rules:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/market:0
+[  887991ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/portfolio:0
+[  887992ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/profile:0
+[  887992ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/watchlists:0
+[  887992ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8874/api/notifications?unread=0:0
+[  912353ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[ 1139147ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[ 1163536ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[ 2240406ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[ 2260765ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864
+[ 3185478ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=673963a4:22164
+[ 3208247ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5176/@vite/client:864

@@ -1,0 +1,167 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime: ${{ steps.classify.outputs.runtime }}
+      contracts: ${{ steps.classify.outputs.contracts }}
+      web: ${{ steps.classify.outputs.web }}
+      desktop: ${{ steps.classify.outputs.desktop }}
+      platform: ${{ steps.classify.outputs.platform }}
+      android: ${{ steps.classify.outputs.android }}
+      ios: ${{ steps.classify.outputs.ios }}
+      docs: ${{ steps.classify.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test scripts/ci_changes.test.mjs
+      - id: classify
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE="$(git hash-object -t tree /dev/null)"
+          fi
+          node scripts/ci_changes.mjs "$BASE" "$HEAD" >> "$GITHUB_OUTPUT"
+
+  runtime:
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pia_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pia_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PIA_TEST_POSTGRES_DSN: postgresql://postgres:postgres@127.0.0.1:5432/pia_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - run: ./scripts/test-runtime.sh
+
+  contracts:
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - run: |
+          PYTHONPATH=packages-py/pia_runtime python scripts/generate_runtime_schemas.py --check
+          python scripts/generate_ts_client.py --check
+          PYTHONPATH=packages-py/pia_runtime python -m unittest discover -s tests -p test_contracts.py
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run build:web
+
+  desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:desktop
+      - run: pnpm run typecheck
+      - run: pnpm run build
+
+  platform:
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
+    uses: ./.github/workflows/desktop.yml
+
+  android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./apps/android/gradlew --no-daemon --project-dir apps/android :app:assembleDebug
+
+  ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path apps/ios/PiaMobileClient
+      - run: xcodebuild -scheme PiaApp -destination 'generic/platform=iOS Simulator' -derivedDataPath .pia/ios-build CODE_SIGNING_ALLOWED=NO build
+        working-directory: apps/ios/PiaMobileClient
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/check_docs.py
+
+  ci-required:
+    if: always()
+    needs: [changes, runtime, contracts, web, desktop, platform, android, ios, docs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci_changes.mjs --gate

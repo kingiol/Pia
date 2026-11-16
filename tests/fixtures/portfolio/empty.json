@@ -1,0 +1,10 @@
+{
+  "snapshot_id": "portfolio_20261105_empty",
+  "user_id": "default",
+  "as_of": "2026-11-05",
+  "source": "fixture",
+  "cash": 1000000.0,
+  "total_value": 1000000.0,
+  "drawdown": 0.02,
+  "positions": []
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pia",
+  "version": "0.1.0",
+  "identifier": "com.pia.investment",
+  "build": {
+    "beforeDevCommand": "cd ../.. && pnpm run dev",
+    "beforeBuildCommand": "cd ../.. && pnpm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../../dist/desktop"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Pia Research Workspace",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1120,
+        "minHeight": 720,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://localhost:* http://127.0.0.1:* http://[::1]:* https:"
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "msi"],
+    "externalBin": ["binaries/pia-runtime"],
+    "createUpdaterArtifacts": false
+  }
+}

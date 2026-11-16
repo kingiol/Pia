@@ -1,0 +1,7 @@
+{
+  "name": "Market Analyst",
+  "prompt_version": "market-v1",
+  "tools": ["get_market_snapshot", "get_market_breadth", "get_index_series"],
+  "minimum_evidence": 2,
+  "timeout_seconds": 45
+}

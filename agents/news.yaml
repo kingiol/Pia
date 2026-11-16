@@ -1,0 +1,7 @@
+{
+  "name": "News Analyst",
+  "prompt_version": "news-v1",
+  "tools": ["search_news", "search_filings"],
+  "minimum_evidence": 2,
+  "timeout_seconds": 60
+}

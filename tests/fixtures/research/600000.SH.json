@@ -1,0 +1,28 @@
+{
+  "symbol": "600000.SH",
+  "as_of": "2026-11-05",
+  "company_profile": {
+    "name": "浦发银行",
+    "industry": "银行",
+    "source": "fixture://company/600000.SH",
+    "observed_at": "2026-11-05T16:15:00+08:00"
+  },
+  "news": [
+    {
+      "id": "news_600000_20261105_1",
+      "title": "浦发银行披露季度经营数据",
+      "published_at": "2026-11-05T09:00:00+08:00",
+      "source": "fixture://news/600000.SH/1",
+      "excerpt": "经营数据保持稳定，资产质量指标需要继续跟踪。"
+    }
+  ],
+  "filings": [
+    {
+      "id": "filing_600000_20261105_1",
+      "title": "浦发银行定期报告",
+      "published_at": "2026-11-04T18:00:00+08:00",
+      "source": "fixture://filings/600000.SH/1",
+      "excerpt": "报告披露资本充足率和风险管理信息。"
+    }
+  ]
+}

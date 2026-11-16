@@ -1,0 +1,277 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - generic [ref=f1e6]: P
+      - generic [ref=f1e7]:
+        - strong [ref=f1e8]: Pia
+        - generic [ref=f1e9]: Research workspace
+    - generic [ref=f1e10]:
+      - generic [ref=f1e11]: Workspace
+      - button "O Overview" [ref=f1e12] [cursor=pointer]:
+        - generic [ref=f1e13]: O
+        - text: Overview
+      - button "M Market" [ref=f1e14] [cursor=pointer]:
+        - generic [ref=f1e15]: M
+        - text: Market
+      - button "P Portfolio" [ref=f1e16] [cursor=pointer]:
+        - generic [ref=f1e17]: P
+        - text: Portfolio
+      - button "R Research" [ref=f1e18] [cursor=pointer]:
+        - generic [ref=f1e19]: R
+        - text: Research
+    - generic [ref=f1e20]:
+      - generic [ref=f1e21]: Controls
+      - button "P Profile" [ref=f1e22] [cursor=pointer]:
+        - generic [ref=f1e23]: P
+        - text: Profile
+      - button "R Rules" [ref=f1e24] [cursor=pointer]:
+        - generic [ref=f1e25]: R
+        - text: Rules
+      - button "D Data Health" [ref=f1e26] [cursor=pointer]:
+        - generic [ref=f1e27]: D
+        - text: Data Health
+      - button "A Audit" [ref=f1e28] [cursor=pointer]:
+        - generic [ref=f1e29]: A
+        - text: Audit
+      - button "N Notifications" [ref=f1e30] [cursor=pointer]:
+        - generic [ref=f1e31]: "N"
+        - text: Notifications
+    - generic [ref=f1e34]:
+      - strong [ref=f1e35]: Local runtime online
+      - generic [ref=f1e36]: deepseek-flash
+  - main [ref=f1e37]:
+    - generic [ref=f1e38]:
+      - generic [ref=f1e39]:
+        - generic [ref=f1e40]: Today
+        - heading "Research overview" [level=1] [ref=f1e41]
+      - generic [ref=f1e42]:
+        - generic [ref=f1e43]: 2026-11-05 · Close
+        - generic [ref=f1e44]: Data healthy
+        - generic [ref=f1e46]: Notifications 0
+        - button "↻" [ref=f1e47] [cursor=pointer]
+        - button "+ New review" [ref=f1e48] [cursor=pointer]
+    - generic [ref=f1e49]:
+      - generic [ref=f1e50]:
+        - generic [ref=f1e51]: Active tasks
+        - strong [ref=f1e52]: "0"
+        - generic [ref=f1e53]: Trace updates live
+      - generic [ref=f1e54]:
+        - generic [ref=f1e55]: Awaiting approval
+        - strong [ref=f1e56]: "0"
+        - generic [ref=f1e57]: Human decision required
+      - generic [ref=f1e58]:
+        - generic [ref=f1e59]: Blocked today
+        - strong [ref=f1e60]: "1"
+        - generic [ref=f1e61]: Rules-first gate
+      - generic [ref=f1e62]:
+        - generic [ref=f1e63]: Rule snapshot
+        - strong [ref=f1e64]: v1
+        - generic [ref=f1e65]: Immutable per task
+    - generic [ref=f1e66]:
+      - generic [ref=f1e67]:
+        - generic [ref=f1e68]:
+          - generic [ref=f1e69]:
+            - generic [ref=f1e70]: Research queue
+            - heading "Tasks" [level=2] [ref=f1e71]
+          - generic [ref=f1e72]: "1"
+        - button "已阻断 11月7日 14:38 收盘市场复盘 2026-11-05 · 4f1188" [ref=f1e81] [cursor=pointer]:
+          - generic [ref=f1e82]:
+            - generic [ref=f1e83]: 已阻断
+            - time [ref=f1e85]: 11月7日 14:38
+          - strong [ref=f1e86]: 收盘市场复盘
+          - generic [ref=f1e87]: 2026-11-05 · 4f1188
+      - generic [ref=f1e88]:
+        - generic [ref=f1e89]:
+          - generic [ref=f1e90]:
+            - generic [ref=f1e91]: MarketClose · task_38f2c34f1188
+            - heading "收盘市场复盘" [level=2] [ref=f1e92]
+            - paragraph [ref=f1e93]: 截至 2026-11-05 的日线快照，经过市场、持仓和风险协作。
+          - generic [ref=f1e94]:
+            - generic [ref=f1e95]: 已阻断
+            - button "Export context" [ref=f1e97] [cursor=pointer]
+        - generic [ref=f1e98]:
+          - generic [ref=f1e99]:
+            - generic [ref=f1e100]: Decision
+            - strong [ref=f1e101]: BLOCKED
+            - text: Resolve blocked rules and create a follow-up research task.
+          - generic [ref=f1e102]:
+            - generic [ref=f1e103]:
+              - text: Confidence
+              - generic [ref=f1e104]: medium
+            - generic [ref=f1e105]:
+              - text: Risk
+              - generic [ref=f1e106]: high
+            - generic [ref=f1e107]:
+              - text: As of
+              - generic [ref=f1e108]: 2026-11-05
+        - generic [ref=f1e109]:
+          - generic [ref=f1e110]:
+            - generic [ref=f1e112]:
+              - generic [ref=f1e113]: Decision rationale
+              - heading "Why this result" [level=3] [ref=f1e114]
+            - paragraph [ref=f1e115]:
+              - generic [ref=f1e116]: •
+              - text: Market breadth is 62%; index trend is up.
+            - paragraph [ref=f1e117]:
+              - generic [ref=f1e118]: •
+              - text: Portfolio drawdown is 4.0%; evidence is tied to snap_20261105_close_fixture.
+            - paragraph [ref=f1e119]:
+              - generic [ref=f1e120]: •
+              - text: 600000.SH weight exceeds the configured position limit.
+            - paragraph [ref=f1e121]:
+              - generic [ref=f1e122]: •
+              - text: 510300.SH weight exceeds the configured position limit.
+            - paragraph [ref=f1e123]:
+              - generic [ref=f1e124]: •
+              - text: Sector exposure for 银行 exceeds the configured limit.
+            - paragraph [ref=f1e125]:
+              - generic [ref=f1e126]: •
+              - text: Sector exposure for 宽基ETF exceeds the configured limit.
+          - generic [ref=f1e127]:
+            - generic [ref=f1e129]:
+              - generic [ref=f1e130]: Rules ruleset_v1
+              - heading "Rules" [level=3] [ref=f1e131]
+            - generic [ref=f1e132]:
+              - generic [ref=f1e133]:
+                - generic [ref=f1e134]: BLOCKED
+                - generic [ref=f1e135]:
+                  - strong [ref=f1e136]: POSITION_LIMIT_EXCEEDED
+                  - paragraph [ref=f1e137]: 600000.SH weight exceeds the configured position limit.
+                - generic [ref=f1e138]: 0.3732 / <= 0.1
+              - generic [ref=f1e139]:
+                - generic [ref=f1e140]: BLOCKED
+                - generic [ref=f1e141]:
+                  - strong [ref=f1e142]: ETF_POSITION_LIMIT
+                  - paragraph [ref=f1e143]: 510300.SH weight exceeds the configured position limit.
+                - generic [ref=f1e144]: 0.3368 / <= 0.25
+              - generic [ref=f1e145]:
+                - generic [ref=f1e146]: BLOCKED
+                - generic [ref=f1e147]:
+                  - strong [ref=f1e148]: SECTOR_CONCENTRATION
+                  - paragraph [ref=f1e149]: Sector exposure for 银行 exceeds the configured limit.
+                - generic [ref=f1e150]: 0.3732 / <= 0.3
+              - generic [ref=f1e151]:
+                - generic [ref=f1e152]: BLOCKED
+                - generic [ref=f1e153]:
+                  - strong [ref=f1e154]: SECTOR_CONCENTRATION
+                  - paragraph [ref=f1e155]: Sector exposure for 宽基ETF exceeds the configured limit.
+                - generic [ref=f1e156]: 0.3368 / <= 0.3
+          - generic [ref=f1e157]:
+            - generic [ref=f1e159]:
+              - generic [ref=f1e160]: 3 cited sources
+              - heading "Evidence" [level=3] [ref=f1e161]
+            - generic [ref=f1e162]:
+              - article [ref=f1e163]:
+                - generic [ref=f1e164]: ↗
+                - generic [ref=f1e165]:
+                  - strong [ref=f1e166]: "Sector close: 半导体"
+                  - paragraph [ref=f1e167]: 半导体 changed 2.8% with breadth 0.77.
+                  - generic [ref=f1e168]: fixture · 2026-11-05 · expires 2026-11-05T23:59:59+08:00 · snapshot snap_20261105_close_fixture
+                - generic [ref=f1e169]: stale
+              - article [ref=f1e170]:
+                - generic [ref=f1e171]: ↗
+                - generic [ref=f1e172]:
+                  - strong [ref=f1e173]: "Sector close: 医药"
+                  - paragraph [ref=f1e174]: 医药 changed 1.4% with breadth 0.64.
+                  - generic [ref=f1e175]: fixture · 2026-11-05 · expires 2026-11-05T23:59:59+08:00 · snapshot snap_20261105_close_fixture
+                - generic [ref=f1e176]: stale
+              - article [ref=f1e177]:
+                - generic [ref=f1e178]: ↗
+                - generic [ref=f1e179]:
+                  - strong [ref=f1e180]: Portfolio exposure snapshot
+                  - paragraph [ref=f1e181]: Portfolio value 1000000, drawdown 4.0%.
+                  - generic [ref=f1e182]: fixture · 2026-11-05 · expires 2026-11-05T23:59:59+08:00 · snapshot portfolio_20261105_fixture
+                - generic [ref=f1e183]: stale
+          - generic [ref=f1e184]:
+            - generic [ref=f1e186]:
+              - generic [ref=f1e187]: Structured disagreement
+              - heading "Bull / Bear debate" [level=3] [ref=f1e188]
+            - generic [ref=f1e189]:
+              - article [ref=f1e190]:
+                - strong [ref=f1e191]: Bull Case Analyst
+                - generic [ref=f1e192]: bull
+                - paragraph [ref=f1e193]: • Market breadth is 62%.
+                - paragraph [ref=f1e194]: • Index trend is up.
+                - generic [ref=f1e195]: "Open: Can breadth persist over the next session?"
+              - article [ref=f1e196]:
+                - strong [ref=f1e197]: Bear Case Analyst
+                - generic [ref=f1e198]: bear
+                - paragraph [ref=f1e199]: • Portfolio drawdown is 4.0%.
+                - paragraph [ref=f1e200]: • Position concentration can amplify downside risk.
+                - generic [ref=f1e201]: "Open: Will concentration remain above the configured limit?"
+              - article [ref=f1e202]:
+                - strong [ref=f1e203]: Debate Chair
+                - generic [ref=f1e204]: Risk gates take precedence until concentration and market conditions are resolved.
+                - generic [ref=f1e205]: "Open: Whether the next market snapshot confirms the current trend."
+                - generic [ref=f1e206]: "Open: Whether portfolio weights return below the configured limits."
+          - generic [ref=f1e207]:
+            - generic [ref=f1e209]:
+              - generic [ref=f1e210]: 10 runs
+              - heading "Agent trace" [level=3] [ref=f1e211]
+            - generic [ref=f1e212]:
+              - generic [ref=f1e213]:
+                - generic [ref=f1e215]:
+                  - strong [ref=f1e216]: Investment Chief
+                  - generic [ref=f1e217]: 11月7日 14:38
+                - generic [ref=f1e218]: 完成
+                - generic [ref=f1e220]: 1 ms
+              - generic [ref=f1e221]:
+                - generic [ref=f1e223]:
+                  - strong [ref=f1e224]: Market Analyst
+                  - generic [ref=f1e225]: 11月7日 14:38
+                - generic [ref=f1e226]: 完成
+                - generic [ref=f1e228]: 1 ms
+              - generic [ref=f1e229]:
+                - generic [ref=f1e231]:
+                  - strong [ref=f1e232]: Sector Analyst
+                  - generic [ref=f1e233]: 11月7日 14:38
+                - generic [ref=f1e234]: 完成
+                - generic [ref=f1e236]: 1 ms
+              - generic [ref=f1e237]:
+                - generic [ref=f1e239]:
+                  - strong [ref=f1e240]: Portfolio Analyst
+                  - generic [ref=f1e241]: 11月7日 14:38
+                - generic [ref=f1e242]: 完成
+                - generic [ref=f1e244]: 1 ms
+              - generic [ref=f1e245]:
+                - generic [ref=f1e247]:
+                  - strong [ref=f1e248]: Technical Analyst
+                  - generic [ref=f1e249]: 11月7日 14:38
+                - generic [ref=f1e250]: 完成
+                - generic [ref=f1e252]: 1 ms
+              - generic [ref=f1e253]:
+                - generic [ref=f1e255]:
+                  - strong [ref=f1e256]: Bull Case Analyst
+                  - generic [ref=f1e257]: 11月7日 14:38
+                - generic [ref=f1e258]: 完成
+                - generic [ref=f1e260]: 1 ms
+              - generic [ref=f1e261]:
+                - generic [ref=f1e263]:
+                  - strong [ref=f1e264]: Bear Case Analyst
+                  - generic [ref=f1e265]: 11月7日 14:38
+                - generic [ref=f1e266]: 完成
+                - generic [ref=f1e268]: 1 ms
+              - generic [ref=f1e269]:
+                - generic [ref=f1e271]:
+                  - strong [ref=f1e272]: Debate Chair
+                  - generic [ref=f1e273]: 11月7日 14:38
+                - generic [ref=f1e274]: 完成
+                - generic [ref=f1e276]: 1 ms
+              - generic [ref=f1e277]:
+                - generic [ref=f1e279]:
+                  - strong [ref=f1e280]: Research Manager
+                  - generic [ref=f1e281]: 11月7日 14:38
+                - generic [ref=f1e282]: 完成
+                - generic [ref=f1e284]: 1 ms
+              - generic [ref=f1e285]:
+                - generic [ref=f1e287]:
+                  - strong [ref=f1e288]: Risk / Rules Agent
+                  - generic [ref=f1e289]: 11月7日 14:38
+                - generic [ref=f1e290]: 完成
+                - generic [ref=f1e292]: 1 ms
+        - generic [ref=f1e293]:
+          - generic [ref=f1e294]:
+            - generic [ref=f1e295]: Human approval
+            - strong [ref=f1e296]: 建议只代表研究意图，不代表成交。
+            - generic [ref=f1e297]: 规则版本 ruleset_v1 · 数据快照 snap_20261105_close_fixture
+          - generic [ref=f1e298]: 当前结果不需要人工批准。

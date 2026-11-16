@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "strategy_id": "legacy_momentum_v1",
+  "version": "1.0.0",
+  "required_capabilities": ["market_snapshot"],
+  "filters": ["profile_universe", "eligible_instrument", "rules_liquidity"],
+  "factors": [
+    {"id": "momentum_breadth", "weight": 1},
+    {"id": "turnover_scaled", "weight": 1}
+  ],
+  "missing_policy": "legacy_zero_with_warning",
+  "score_round_digits": 4,
+  "sort": ["score_desc", "input_ordinal_asc", "symbol_asc"]
+}

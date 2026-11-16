@@ -1,0 +1,7 @@
+{
+  "name": "Portfolio Analyst",
+  "prompt_version": "portfolio-v1",
+  "tools": ["get_portfolio_snapshot", "calculate_exposure", "simulate_position_change"],
+  "minimum_evidence": 1,
+  "timeout_seconds": 45
+}

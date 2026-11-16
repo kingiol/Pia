@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Decision",
+  "type": "object",
+  "required": ["status", "confidence", "risk_level", "rationale"],
+  "properties": {
+    "status": {"enum": ["BUY_CANDIDATE", "SELL_CANDIDATE", "HOLD", "WATCH", "NO_ACTION", "BLOCKED"]},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "risk_level": {"enum": ["low", "medium", "high", "critical"]},
+    "rationale": {"type": "array", "items": {"type": "string"}},
+    "next_action": {"type": "string"},
+    "synthesis": {"type": "object"},
+    "result_metadata": {"$ref": "result-metadata.json"}
+  }
+}

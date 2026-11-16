@@ -1,0 +1,3 @@
+[      65ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=31f12a4f:22162
+[     118ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5176/favicon.ico:0
+[    5595ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5176/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=31f12a4f:22162

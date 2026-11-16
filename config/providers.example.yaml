@@ -1,0 +1,53 @@
+{
+  "providers": [
+    {
+      "provider_id": "akshare",
+      "priority": 1,
+      "enabled": true,
+      "requires_credentials": false,
+      "capabilities": ["trading_calendar", "daily_bars", "market_breadth", "fundamentals"],
+      "supports_replay": true,
+      "retry_attempts": 2,
+      "retry_backoff_seconds": 0.25,
+      "circuit_failure_threshold": 3,
+      "circuit_reset_seconds": 30
+    },
+    {
+      "provider_id": "tushare",
+      "priority": 2,
+      "enabled": false,
+      "requires_credentials": true,
+      "capabilities": ["trading_calendar", "daily_bars", "market_breadth", "fundamentals"],
+      "supports_replay": true
+    },
+    {
+      "provider_id": "deepseek",
+      "priority": 1,
+      "enabled": true,
+      "requires_credentials": true,
+      "capabilities": ["structured_output", "streaming", "tool_calls"]
+    },
+    {
+      "provider_id": "cloud-webhook",
+      "priority": 1,
+      "enabled": false,
+      "requires_credentials": true,
+      "capabilities": ["notification_delivery"]
+    },
+    {
+      "provider_id": "device-gateway",
+      "priority": 2,
+      "enabled": false,
+      "requires_credentials": true,
+      "capabilities": ["web_push", "apns", "fcm", "notification_delivery"]
+    },
+    {
+      "provider_id": "platform-push-gateway",
+      "priority": 2,
+      "enabled": false,
+      "requires_credentials": true,
+      "capabilities": ["web_push", "apns", "fcm", "notification_delivery"],
+      "channels": ["web", "ios", "android"]
+    }
+  ]
+}

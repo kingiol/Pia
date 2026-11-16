@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "strategy_id": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "title": "Strategy Id",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "title": "Version",
+      "type": "string"
+    },
+    "required_capabilities": {
+      "items": {
+        "const": "market_snapshot",
+        "type": "string"
+      },
+      "title": "Required Capabilities",
+      "type": "array"
+    },
+    "filters": {
+      "items": {
+        "enum": [
+          "profile_universe",
+          "eligible_instrument",
+          "rules_liquidity"
+        ],
+        "type": "string"
+      },
+      "title": "Filters",
+      "type": "array"
+    },
+    "factors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "momentum_breadth",
+              "turnover_scaled"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "weight": {
+            "minimum": 0,
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "weight"
+        ],
+        "title": "Factor",
+        "type": "object"
+      },
+      "minItems": 1,
+      "title": "Factors",
+      "type": "array"
+    },
+    "missing_policy": {
+      "default": "exclude_with_reason",
+      "enum": [
+        "legacy_zero_with_warning",
+        "exclude_with_reason"
+      ],
+      "title": "Missing Policy",
+      "type": "string"
+    },
+    "score_round_digits": {
+      "maximum": 8,
+      "minimum": 0,
+      "title": "Score Round Digits",
+      "type": "integer"
+    },
+    "sort": {
+      "items": {
+        "enum": [
+          "score_desc",
+          "input_ordinal_asc",
+          "symbol_asc"
+        ],
+        "type": "string"
+      },
+      "title": "Sort",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "strategy_id",
+    "version",
+    "required_capabilities",
+    "filters",
+    "factors",
+    "score_round_digits",
+    "sort"
+  ],
+  "title": "ScreeningStrategy",
+  "type": "object"
+}

@@ -1,0 +1,211 @@
+[     581ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=d528bf83:22164
+[    1623ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    1642ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task/events:0
+[    1642ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    2814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    4016ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    5216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    6419ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    7620ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[    8819ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   10016ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   11213ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   12414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   13615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   14814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   16015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   17216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   18415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   19615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   20815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   22013ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   23214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   24413ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   25615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   26814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   28014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   29215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   30415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   31617ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   32814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   34015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   35214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   36414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   37616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   38816ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   40015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   41215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   42414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   43616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   44814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   46014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   47216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   48415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   49615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   50816ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   52015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   53215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   54414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   55618ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   56815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   58015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   59214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   60415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   61616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   62814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   64015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   65213ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   66414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   67617ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   68816ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   70014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   71215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   72415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   73616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   74815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   76015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   77216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   78415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   79616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   80815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   82015ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   83215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   84415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   85614ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   86814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   88014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   89215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   90414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   91616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   92813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   94014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   95212ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   96415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   97616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[   98814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  100014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  101214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  102414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  103616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  104814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  106014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  107216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  108415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  109616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  110814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  112014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  113216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  114415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  115616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  116815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  118014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  119213ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  120413ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  121616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  122814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  124013ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  125214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  126415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  127615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  128815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  130014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  131213ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  132415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  133615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  134813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  136014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  137215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  138415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  139615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  140813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  142014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  143215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  144417ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  145615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  146816ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  148013ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  149214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  150413ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  151615ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  152813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  154014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  155221ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  156415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  157616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  158814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  160014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  161214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  162415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  163614ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  164815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  166014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  167213ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  168415ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  169614ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  170814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  172014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  173213ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  174414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  175613ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  176813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  178014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  179215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  180416ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  181617ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  182813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  184014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  185215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  186413ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  187616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  188814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  190014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  191214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  192416ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  193614ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  194815ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  196016ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  197215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  198412ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  199616ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  200814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  202014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  203214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  204413ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  205614ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  206814ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  208014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  209215ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  210414ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  211614ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  212813ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  214014ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  215214ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  307641ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5173/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=d528bf83:22164
+[  308554ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  308555ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task/events:0
+[  308571ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8874/api/tasks/missing-task:0
+[  367029ms] [ERROR] The final argument passed to %s changed size between renders. The order and size of this array must remain constant.
+
+Previous: %s
+Incoming: %s useEffect [, (taskId) => {
+    setSelectedId(taskId);
+    setTaskData(null);
+    if (typeof window !== "undefined" && isTauriRuntime()) {
+      const url = new URL(window.location.href);
+      if (taskId) url.searchParams.set("task", taskId);
+      else
+        url.searchParams.delete("task");
+      window.history.replaceState({}, "", url);
+    }
+  }, , true] [, (taskId) => {
+    setSelectedId(taskId);
+    setTaskData(null);
+    if (typeof window !== "undefined" && isTauriRuntime()) {
+      const url = new URL(window.location.href);
+      if (taskId) url.searchParams.set("task", taskId);
+      else
+        url.searchParams.delete("task");
+      window.history.replaceState({}, "", url);
+    }
+  }, true] @ http://127.0.0.1:5173/@fs/Users/kingiol/Desktop/Pia/node_modules/.vite/deps/react-dom_client.js?v=d528bf83:5891
+[  672345ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5173/@vite/client:864

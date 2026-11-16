@@ -1,0 +1,7 @@
+{
+  "name": "Debate Chair",
+  "prompt_version": "debate-v1",
+  "tools": ["get_task_trace", "save_evidence"],
+  "minimum_evidence": 2,
+  "timeout_seconds": 45
+}
