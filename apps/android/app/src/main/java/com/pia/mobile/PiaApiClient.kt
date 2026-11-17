@@ -207,7 +207,9 @@ class PiaApiClient(
         id = optString("id"),
         triggerType = optString("trigger_type"),
         status = optString("status"),
-        asOf = optJSONObject("target")?.optString("as_of", "—") ?: "—",
+        asOf = optJSONObject("target")?.text("as_of") ?: "—",
+        createdAt = text("created_at").orEmpty(),
+        symbol = optJSONObject("target")?.symbol(),
     )
 
     private fun JSONObject.toNotification() = PiaNotification(

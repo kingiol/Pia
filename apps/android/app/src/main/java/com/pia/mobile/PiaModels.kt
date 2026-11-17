@@ -14,6 +14,8 @@ data class PiaTask(
     val triggerType: String,
     val status: String,
     val asOf: String,
+    val createdAt: String,
+    val symbol: String?,
 )
 
 data class PiaTaskEvent(

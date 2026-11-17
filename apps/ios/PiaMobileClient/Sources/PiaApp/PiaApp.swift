@@ -39,7 +39,7 @@ private enum PiaCloudConfiguration {
 
 private func displayTaskStatus(_ status: TaskStatus) -> String {
     switch status {
-    case .waitingApproval: return "等你确认"
+    case .waitingApproval: return "待处理"
     case .blocked: return "已被规则拦截"
     case .done, .approved: return "已完成"
     case .failed, .retryable, .timeout: return "需要处理"
@@ -326,16 +326,16 @@ struct ContentView: View {
                     Text("暂无研究记录")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(tasks) { task in
+                ForEach(tasks.filter { $0.status == .waitingApproval } + tasks.filter { $0.status != .waitingApproval }) { task in
                     NavigationLink {
                         TaskDetailView(client: client, task: task)
                             .onDisappear { Task { await refresh() } }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(task.triggerType == "MarketClose" ? "收盘市场复盘" : task.triggerType)
+                            Text(task.researchTitle)
                                 .font(.headline.weight(.medium))
                             TaskStatusLabel(status: task.status)
-                            Text(asOf(task))
+                            Text("数据 \(task.researchDate) · 创建于 \(task.createdDisplay) · #\(task.id.suffix(6))")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -514,11 +514,6 @@ struct ContentView: View {
         return created
     }
 
-    private func asOf(_ task: ResearchTask) -> String {
-        guard let value = task.target?["as_of"] else { return "—" }
-        if case .string(let text) = value { return text }
-        return "—"
-    }
 
 }
 
@@ -535,9 +530,13 @@ private struct TaskDetailView: View {
     @State private var evidenceExpanded = false
     @State private var traceExpanded = false
     @State private var rulesExpanded = false
+    @State private var reviewExpanded = false
     @Environment(\.colorScheme) private var colorScheme
 
-    private var currentStatus: TaskStatus { detail?.task.status ?? task.status }
+    private var currentTask: ResearchTask { detail?.task ?? task }
+    private var currentStatus: TaskStatus { currentTask.status }
+    private var canReview: Bool { actionsVerified && currentStatus == .waitingApproval }
+    private var canApprove: Bool { canReview && detail?.canConfirmRecommendation == true }
 
     var body: some View {
         List {
@@ -551,37 +550,68 @@ private struct TaskDetailView: View {
                         .disabled(loading || busy)
                 }
             }
-            Section("研究任务") {
-                TaskStatusLabel(status: currentStatus)
-                LabeledContent("触发方式", value: task.triggerType == "MarketClose" ? "收盘复盘" : task.triggerType)
-                LabeledContent("创建时间", value: task.createdAt)
-            }
+            let rules = ResearchRule.from(detail?.decision)
             if let decision = detail?.decision {
                 Section("研究结论") {
-                    Text(stringValue(decision["status"]).flatMap(TaskStatus.init(rawValue:)).map(displayTaskStatus)
-                         ?? stringValue(decision["status"]) ?? "分析中")
+                    let status = stringValue(decision["status"]) ?? "分析中"
+                    Text(status == "WATCH" ? "观察" : TaskStatus(rawValue: status).map(displayTaskStatus) ?? status)
                         .font(.headline)
-                    if let risk = stringValue(decision["risk_level"]) {
-                        LabeledContent("风险", value: risk)
-                    }
-                    if let confidence = stringValue(decision["confidence"]) {
-                        LabeledContent("置信度", value: confidence)
+                    if let blocker = rules.first(where: \.isBlocking) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(blocker.title)
+                            Text(blocker.comparison).font(.subheadline).foregroundStyle(.secondary)
+                        }
                     }
                     if let rationale = stringValue(decision["next_action"]) {
-                        Text(rationale)
-                            .foregroundStyle(.secondary)
+                        Text(researchNextAction(rationale)).foregroundStyle(.secondary)
+                    }
+                    LabeledContent("数据日期", value: currentTask.researchDate)
+                    if let risk = stringValue(decision["risk_level"]) {
+                        LabeledContent("风险", value: researchLevel(risk))
+                    }
+                    if let confidence = stringValue(decision["confidence"]) {
+                        LabeledContent("置信度", value: researchLevel(confidence))
                     }
                 }
+            } else {
+                Section(currentTask.researchTitle) {
+                    TaskStatusLabel(status: currentStatus)
+                    LabeledContent("数据日期", value: currentTask.researchDate)
+                }
             }
-            if let decision = detail?.decision,
-               let rules = decision["rationale"],
-               case .object(let rationale) = rules,
-               let ruleResult = rationale["rules"] {
+            if canReview {
                 Section {
-                    DisclosureGroup("规则与风险", isExpanded: $rulesExpanded) {
-                        if case .object(let ruleObject) = ruleResult,
-                           let gate = stringValue(ruleObject["decision"]) {
-                            LabeledContent("规则门禁", value: gate)
+                    DisclosureGroup(canApprove ? "查看确认选项" : "查看处理选项", isExpanded: $reviewExpanded) {
+                        Text(canApprove ? "可确认建议" : "待处理 · 仅供研究")
+                            .font(.headline)
+                        LabeledContent("风险", value: researchLevel(stringValue(detail?.decision?["risk_level"]) ?? "—"))
+                        LabeledContent("规则版本", value: currentTask.ruleSnapshotID ?? "—")
+                        LabeledContent("数据日期", value: currentTask.researchDate)
+                        if canApprove {
+                            Button("接受建议") { performApproval("APPROVE") }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button("暂不行动") { performApproval("NO_ACTION") }
+                        Button("继续研究") { performApproval("REQUEST_MORE_RESEARCH") }
+                        if detail?.canMarkAsWatch == true {
+                            Button("加入关注") { performApproval("MARK_AS_WATCH") }
+                        }
+                        Button("拒绝建议", role: .destructive) { performApproval("REJECT") }
+                    }
+                    .disabled(busy || loading)
+                }
+            }
+            if detail?.decision != nil {
+                Section {
+                    DisclosureGroup("规则与风险 · \(rules.count)", isExpanded: $rulesExpanded) {
+                        if rules.isEmpty {
+                            Text("暂无规则触发记录").foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(rules.enumerated()), id: \.offset) { _, rule in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(rule.title)
+                                Text(rule.comparison).font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -596,7 +626,7 @@ private struct TaskDetailView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(row.evidence.title).font(.headline.weight(.medium))
                                 Text(row.evidence.excerpt ?? "暂无摘要").font(.subheadline)
-                                Text("\(row.evidence.source) · \(row.evidence.asOf) · \(row.evidence.quality)")
+                                Text("\(row.evidence.source) · \(row.evidence.asOf) · \(researchEvidenceQuality(row.evidence))")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 if let provider = row.evidence.providerID {
@@ -631,25 +661,6 @@ private struct TaskDetailView: View {
                     }
                 }
             }
-            if canApprove {
-                Section("你来决定") {
-                    Button {
-                        performApproval("APPROVE")
-                    } label: {
-                        Text("接受建议").foregroundStyle(PiaPalette.onAccent(colorScheme))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button("拒绝建议", role: .destructive) { performApproval("REJECT") }
-                        .disabled(busy)
-                    Button("暂不行动") { performApproval("NO_ACTION") }
-                        .disabled(busy)
-                    Button("继续研究") { performApproval("REQUEST_MORE_RESEARCH") }
-                        .disabled(busy)
-                    Button("加入关注") { performApproval("MARK_AS_WATCH") }
-                        .disabled(busy)
-                }
-                .disabled(busy || loading)
-            }
             if actionsVerified && hasTaskControls {
                 Section("任务控制") {
                 if currentStatus == .queued {
@@ -681,7 +692,7 @@ private struct TaskDetailView: View {
                 .disabled(busy || loading)
             }
         }
-        .navigationTitle("研究详情")
+        .navigationTitle(currentTask.researchTitle)
         .refreshable { await load() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -699,10 +710,6 @@ private struct TaskDetailView: View {
             await load()
             await streamEvents()
         }
-    }
-
-    private var canApprove: Bool {
-        actionsVerified && currentStatus == .waitingApproval
     }
 
     private var hasTaskControls: Bool {
@@ -758,7 +765,9 @@ private struct TaskDetailView: View {
     }
 
     private func performApproval(_ action: String) {
-        guard !busy, !loading, canApprove else { return }
+        guard !busy, !loading, canReview else { return }
+        if action == "APPROVE", !canApprove { return }
+        if action == "MARK_AS_WATCH", detail?.canMarkAsWatch != true { return }
         busy = true
         errorMessage = nil
         Task {

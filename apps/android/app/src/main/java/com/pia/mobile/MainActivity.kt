@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -98,6 +99,8 @@ private fun PiaApp() {
     var operation by remember { mutableStateOf<String?>(null) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+    val researchListState = rememberLazyListState()
+    val orderedTasks = remember(tasks) { tasks.sortedBy { it.status != "WAITING_APPROVAL" } }
 
     suspend fun refresh() {
         val nextTasks = client.tasks()
@@ -281,7 +284,7 @@ private fun PiaApp() {
                                     HorizontalDivider()
                                 }
                             }
-                            1 -> LazyColumn(Modifier.fillMaxSize()) {
+                            1 -> LazyColumn(Modifier.fillMaxSize(), state = researchListState) {
                                 item {
                                     TextButton(
                                         onClick = { createReview() },
@@ -296,7 +299,7 @@ private fun PiaApp() {
                                 if (tasks.isEmpty() && operation == null) {
                                     item { EmptyNotice("暂无研究记录", "完成复盘后，在这里查看结论与依据") }
                                 }
-                                items(tasks, key = { it.id }) { research ->
+                                items(orderedTasks, key = { it.id }) { research ->
                                     TextButton(
                                         onClick = { selectedTask = research },
                                         modifier = Modifier.fillMaxWidth(),
@@ -307,13 +310,13 @@ private fun PiaApp() {
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
                                         ) {
                                             Text(
-                                                taskTitle(research.triggerType),
+                                                research.title,
                                                 style = MaterialTheme.typography.titleMedium,
                                                 color = MaterialTheme.colorScheme.onSurface,
                                             )
                                             TaskStatusLabel(research.status)
                                             Text(
-                                                research.asOf,
+                                                "数据 ${research.asOf} · 创建于 ${createdDisplay(research.createdAt)} · #${research.id.takeLast(6)}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
@@ -364,12 +367,10 @@ private fun PiaApp() {
     }
 }
 
-internal fun taskTitle(triggerType: String): String =
-    if (triggerType == "MarketClose") "收盘市场复盘" else triggerType
-
 internal fun statusText(status: String): String = when (status) {
-    "WAITING_APPROVAL" -> "等你确认"
+    "WAITING_APPROVAL" -> "待处理"
     "BLOCKED" -> "已被规则拦截"
+    "WATCH" -> "观察"
     "DONE", "APPROVED" -> "已完成"
     "FAILED", "RETRYABLE", "TIMEOUT" -> "需要处理"
     "QUEUED" -> "排队中"

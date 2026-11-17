@@ -28,7 +28,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { api, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
-import type { DeepSeekCredentialStatus } from "./api";
+import type { DeepSeekCredentialStatus, RuleReason } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
 
@@ -87,7 +87,7 @@ function friendlyError(error: unknown, fallback: string) {
   try {
     const payload = JSON.parse(raw) as { error?: string; message?: string };
     const code = payload.error ?? payload.message;
-    if (code === "task_not_found") return "这条研究记录已不存在，已回到研究总览。";
+    if (code === "task_not_found") return "这条研究记录已不存在。";
     if (code === "unauthorized") return "云端工作区需要重新连接，请输入访问令牌。";
     if (code) return `请求未完成：${code}`;
   } catch {
@@ -97,10 +97,6 @@ function friendlyError(error: unknown, fallback: string) {
     return "无法连接运行时，请检查所选环境的服务地址和网络后重试。";
   }
   return raw.length > 220 ? `${raw.slice(0, 217)}…` : raw;
-}
-
-function taskExists(tasks: Task[], taskId: string | null) {
-  return Boolean(taskId && tasks.some((task) => task.id === taskId));
 }
 
 const REPLAY_AS_OF = "2026-11-05";
@@ -145,7 +141,7 @@ function statusLabel(status: TaskStatus | string) {
     PLANNING: "规划中",
     REVIEWING: "审核中",
     PAUSED: "已暂停",
-    WAITING_APPROVAL: "待审批",
+    WAITING_APPROVAL: "待处理",
     BLOCKED: "已阻断",
     NO_ACTION: "无动作",
     APPROVED: "已批准",
@@ -157,8 +153,29 @@ function statusLabel(status: TaskStatus | string) {
     CANCELLED: "已取消",
     EXPIRED: "已过期",
     QUEUED: "排队中",
+    PENDING: "待生成",
+    WATCH: "观察",
+    HOLD: "持有",
+    BUY_CANDIDATE: "买入候选",
+    SELL_CANDIDATE: "卖出候选",
   };
   return labels[status] ?? status;
+}
+
+const levelLabels: Record<string, string> = { low: "低", medium: "中", high: "高" };
+const trendLabels: Record<string, string> = { up: "上涨", down: "下跌", flat: "横盘", "up or flat": "上涨或横盘" };
+const qualityLabels: Record<string, string> = { verified: "已验证", partial: "部分验证", stale: "已过期", unavailable: "不可用", unknown: "未知" };
+const healthLabels: Record<string, string> = { ok: "正常", healthy: "正常", local: "本地", cloud: "云端", degraded: "降级", unavailable: "不可用" };
+
+function localizedLabel(labels: Record<string, string>, value: unknown, fallback = "—") {
+  const key = String(value ?? fallback);
+  return Object.hasOwn(labels, key) ? labels[key] : key;
+}
+
+function nextActionLabel(action: string) {
+  return action === "Review evidence and unresolved research limitations."
+    ? "核对证据与尚未解决的研究限制。"
+    : action;
 }
 
 function StatusBadge({ status }: { status: TaskStatus | string }) {
@@ -251,13 +268,17 @@ function LoginView({ onSubmit, error }: { onSubmit: (token: string) => void; err
 
 export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runtimeControl?: ReactNode; runtimeReady?: boolean; runtimeMode?: "local" | "cloud" } = {}) {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksReady, setTasksReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return null;
     return taskFromWebPath(window.location.pathname)
       ?? new URLSearchParams(window.location.search).get("task");
   });
-  const [detail, setDetail] = useState<TaskDetail | null>(null);
+  const selectedTaskRef = useRef(selectedId);
+  const detailSequence = useRef({ requested: 0, applied: 0 });
+  const [taskDetail, setDetail] = useState<TaskDetail | null>(null);
+  const detail = taskDetail?.task.id === selectedId ? taskDetail : null;
+  const [detailError, setDetailError] = useState("");
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(() => Boolean(selectedId));
   const [health, setHealth] = useState<{ status: string; runtime: string; provider: { status: string; provider_id?: string }; llm: { model: string; credentials_configured: boolean }; scheduler?: { enabled: boolean; timezone: string; close_time: string; last_dispatched_date: string | null } } | null>(null);
   const [rules, setRules] = useState<Record<string, unknown> | null>(null);
   const [market, setMarket] = useState<Record<string, unknown> | null>(null);
@@ -288,7 +309,14 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   const searchRef = useRef<HTMLInputElement>(null);
 
   const selectTask = useCallback((taskId: string | null) => {
+    if (selectedTaskRef.current === taskId) return;
+    selectedTaskRef.current = taskId;
+    // Invalidate outstanding reads, even when the user switches back to the same task.
+    detailSequence.current.applied = ++detailSequence.current.requested;
     setSelectedId(taskId);
+    setDetail(null);
+    setDetailError("");
+    if (!taskId) setMobileDetailOpen(false);
     setTaskData(null);
     if (typeof window !== "undefined" && isTauriRuntime()) {
       const url = new URL(window.location.href);
@@ -297,6 +325,44 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       window.history.replaceState({}, "", url);
     }
   }, []);
+
+  const loadDetail = useCallback(async (taskId: string) => {
+    if (selectedTaskRef.current !== taskId) return;
+    const request = ++detailSequence.current.requested;
+    try {
+      const result = await api.task(taskId);
+      if (selectedTaskRef.current !== taskId || request < detailSequence.current.applied) return;
+      detailSequence.current.applied = request;
+      setDetail(result);
+      setDetailError("");
+    } catch (error) {
+      if (selectedTaskRef.current !== taskId || request < detailSequence.current.applied) return;
+      detailSequence.current.applied = request;
+      const message = friendlyError(error, "读取任务失败");
+      if (message.includes("已不存在")) {
+        selectTask(null);
+        setError(message);
+      } else {
+        setDetailError(message);
+      }
+    }
+  }, [selectTask]);
+
+  const openResearch = (taskId: string) => {
+    selectTask(taskId);
+    setMobileDetailOpen(true);
+    if (window.matchMedia("(max-width: 700px)").matches) {
+      window.requestAnimationFrame(() => document.getElementById("return-to-research-queue")?.focus());
+    }
+  };
+
+  const returnToQueue = () => {
+    setMobileDetailOpen(false);
+    window.requestAnimationFrame(() => {
+      const row = document.getElementById(`task-${selectedTaskRef.current}`);
+      (row ?? document.getElementById("research-queue-heading"))?.focus();
+    });
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -329,7 +395,6 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         })),
       ]);
       setTasks(taskResult.tasks);
-      setTasksReady(true);
       setHealth(healthResult);
       setRules(ruleResult.rules);
       setMarket(marketResult);
@@ -343,11 +408,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       setNotifications(nextNotifications);
       setUnreadNotifications(nextNotifications.filter((item) => !item.read_at).length);
       setError(null);
-      if (selectedId && !taskExists(taskResult.tasks, selectedId)) {
-        selectTask(null);
-        setDetail(null);
-      }
-      if (!selectedId && taskResult.tasks[0]) selectTask(taskResult.tasks[0].id);
+      if (!selectedTaskRef.current && taskResult.tasks[0]) selectTask(taskResult.tasks[0].id);
       const currentTaskInput = taskInput(healthResult, marketResult);
       try {
         const candidateResult = await api.candidates(
@@ -367,7 +428,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       if (/云端工作区需要重新连接|unauthorized|401/i.test(message)) setAuthRequired(true);
       setError(message);
     }
-  }, [selectedId, selectTask]);
+  }, [selectTask]);
 
   useEffect(() => {
     if (runtimeControl) return;
@@ -380,52 +441,46 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   useEffect(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return;
     const url = new URL(window.location.href);
-    if (view === "Research" && selectedId) {
-      url.pathname = `/research/${encodeURIComponent(selectedId)}`;
+    const isMobileQueue = (view === "Research" || view === "Overview")
+      && !mobileDetailOpen && window.matchMedia("(max-width: 700px)").matches;
+    const linkedTask = isMobileQueue ? null : selectedId;
+    if (view === "Research" && linkedTask) {
+      url.pathname = `/research/${encodeURIComponent(linkedTask)}`;
       url.searchParams.delete("task");
     } else {
       url.pathname = webRoutes[view] ?? webRoutes.Overview;
-      if (selectedId) url.searchParams.set("task", selectedId);
+      if (linkedTask) url.searchParams.set("task", linkedTask);
       else url.searchParams.delete("task");
     }
     if (searchQuery.trim()) url.searchParams.set("q", searchQuery.trim());
     else url.searchParams.delete("q");
     window.history.replaceState({}, "", url);
-  }, [searchQuery, selectedId, view]);
+  }, [searchQuery, selectedId, view, mobileDetailOpen]);
   useEffect(() => {
-    if (!selectedId || !tasksReady) { setDetail(null); return; }
-    if (!taskExists(tasks, selectedId)) {
-      selectTask(null);
-      return;
-    }
-    const taskId = selectedId;
-    const handleMissingTask = (requestError: unknown) => {
-      const message = friendlyError(requestError, "读取任务失败");
-      if (message.includes("已不存在")) {
-        selectTask(null);
-        setDetail(null);
-      } else {
-        setError(message);
-      }
+    if (!selectedId || !runtimeReady) return;
+    let loading = false;
+    const update = async () => {
+      if (loading) return;
+      loading = true;
+      await loadDetail(selectedId);
+      loading = false;
     };
-    void api.task(taskId).then(setDetail).catch(handleMissingTask);
-    const unsubscribe = api.subscribeTask(taskId, () => {
-      void api.task(taskId).then(setDetail).catch(handleMissingTask);
+    const refreshSelection = () => {
+      void update();
       void api.tasks().then((result) => setTasks(result.tasks)).catch(() => undefined);
-    });
-    const handle = window.setInterval(() => {
-      void api.task(taskId).then(setDetail).catch(handleMissingTask);
-      void api.tasks().then((result) => setTasks(result.tasks)).catch(() => undefined);
-    }, 1200);
+    };
+    void update();
+    const unsubscribe = api.subscribeTask(selectedId, refreshSelection);
+    const handle = window.setInterval(refreshSelection, 1200);
     return () => { unsubscribe(); window.clearInterval(handle); };
-  }, [selectedId, selectTask, tasksReady]);
+  }, [selectedId, runtimeReady, loadDetail]);
 
   const createTask = async () => {
     if (!runtimeReady) return;
     setBusy(true);
     try {
       const result = await api.createTask(taskInput(health, market));
-      selectTask(result.task.id);
+      openResearch(result.task.id);
       setView("Overview");
       await refresh();
     } catch (requestError) {
@@ -509,7 +564,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     setBusy(true);
     try {
       const result = await api.createResearchTask(symbol, taskInput(health, market));
-      selectTask(result.task.id);
+      openResearch(result.task.id);
       setView("Research");
       await refresh();
     } catch (requestError) {
@@ -519,13 +574,13 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     }
   };
 
-  const approve = async (action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH") => {
-    if (!selectedId) return;
+  const approve = async (taskId: string, action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH") => {
+    if (busy || taskId !== selectedTaskRef.current || detail?.task.id !== taskId || detail.task.status !== "WAITING_APPROVAL") return;
     setBusy(true);
     try {
-      await api.approve(selectedId, action);
+      await api.approve(taskId, action);
+      await loadDetail(taskId);
       await refresh();
-      setDetail(await api.task(selectedId));
     } catch (requestError) {
       setError(friendlyError(requestError, "审批失败"));
     } finally {
@@ -539,7 +594,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     try {
       await api[action](selectedId);
       await refresh();
-      setDetail(await api.task(selectedId));
+      await loadDetail(selectedId);
     } catch (requestError) {
       setError(friendlyError(requestError, "任务控制失败"));
     } finally {
@@ -553,7 +608,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     try {
       await api.cancel(selectedId, "Cancelled from Pia Workspace");
       await refresh();
-      setDetail(await api.task(selectedId));
+      await loadDetail(selectedId);
     } catch (requestError) {
       setError(friendlyError(requestError, "取消任务失败"));
     } finally {
@@ -568,7 +623,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       const result = await api.retry(selectedId);
       selectTask(result.task.id);
       await refresh();
-      setDetail(await api.task(result.task.id));
+      await loadDetail(result.task.id);
     } catch (requestError) {
       setError(friendlyError(requestError, "重试任务失败"));
     } finally {
@@ -583,7 +638,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       const result = await api.replay(selectedId);
       selectTask(result.task.id);
       await refresh();
-      setDetail(await api.task(result.task.id));
+      await loadDetail(result.task.id);
     } catch (requestError) {
       setError(friendlyError(requestError, "回放任务失败"));
     } finally {
@@ -595,7 +650,8 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     if (!selectedId) return;
     setBusy(true);
     try {
-      setTaskData(await api.taskData(selectedId));
+      const data = await api.taskData(selectedId);
+      if (data.task_id === selectedTaskRef.current) setTaskData(data);
     } catch (requestError) {
       setError(friendlyError(requestError, "读取原始数据失败"));
     } finally {
@@ -697,7 +753,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     setBusy(true);
     try {
       await api.takeover(selectedId, "Taken over from Pia Workspace");
-      setDetail(await api.task(selectedId));
+      await loadDetail(selectedId);
       await refresh();
     } catch (requestError) {
       setError(friendlyError(requestError, "人工接管失败"));
@@ -735,7 +791,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     setBusy(true);
     try {
       await api.recordRetrospective(selectedId, payload);
-      setDetail(await api.task(selectedId));
+      await loadDetail(selectedId);
       setError(null);
     } catch (requestError) {
       setError(friendlyError(requestError, "保存复盘失败"));
@@ -789,7 +845,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   }), [health, market, portfolio, profile, tasks]);
   const isReplayData = market?.provider_id === "fixture" || market?.source === "fixture" || health?.provider?.provider_id === "fixture";
   const dataState = !health
-    ? { label: "正在连接", tone: "connecting", healthLabel: "正在连接" }
+    ? { label: "等待行情数据", tone: "connecting", healthLabel: "正在连接运行环境" }
     : health.status !== "ok"
       ? { label: "数据不可用", tone: "unavailable", healthLabel: "运行时异常" }
       : health.provider.status !== "healthy" || !market?.snapshot_id
@@ -821,6 +877,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     />;
   }
 
+  const showMobileDetail = Boolean(selectedId && mobileDetailOpen && (view === "Research" || view === "Overview"));
   return (
     <div className="shell">
       <aside className={`sidebar ${navigationOpen ? "navigation-open" : ""}`} onKeyDown={(event) => {
@@ -838,11 +895,11 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         }}>
         <div className="sidebar-section">
           <span className="eyebrow">工作台</span>
-          {nav.slice(0, 6).map(([label, key, icon]) => <button key={key} title={label} aria-label={label} aria-current={view === key ? "page" : undefined} className={`nav-item ${view === key ? "active" : ""}`} onClick={() => { setView(key); setNavigationOpen(false); }}><span className="nav-glyph"><NavIcon name={icon} /></span><span className="nav-label">{label}</span></button>)}
+          {nav.slice(0, 6).map(([label, key, icon]) => <button key={key} title={label} aria-label={label} aria-current={view === key ? "page" : undefined} className={`nav-item ${view === key ? "active" : ""}`} onClick={() => { setView(key); setMobileDetailOpen(false); setNavigationOpen(false); }}><span className="nav-glyph"><NavIcon name={icon} /></span><span className="nav-label">{label}</span></button>)}
         </div>
         <div className="sidebar-section">
           <span className="eyebrow">设置</span>
-          {nav.slice(6).map(([label, key, icon]) => <button key={key} title={label} aria-label={label} aria-current={view === key ? "page" : undefined} className={`nav-item ${view === key ? "active" : ""}`} onClick={() => { setView(key); setNavigationOpen(false); }}><span className="nav-glyph"><NavIcon name={icon} /></span><span className="nav-label">{label}</span></button>)}
+          {nav.slice(6).map(([label, key, icon]) => <button key={key} title={label} aria-label={label} aria-current={view === key ? "page" : undefined} className={`nav-item ${view === key ? "active" : ""}`} onClick={() => { setView(key); setMobileDetailOpen(false); setNavigationOpen(false); }}><span className="nav-glyph"><NavIcon name={icon} /></span><span className="nav-label">{label}</span></button>)}
         </div>
         </nav>
         <div className="sidebar-bottom">
@@ -850,7 +907,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         </div>
       </aside>
 
-      <main className="main">
+      <main className={`main${showMobileDetail ? " research-detail-open" : ""}`}>
         <header className="topbar">
           <div className="page-heading">
             <h1 tabIndex={-1}>{view === "Overview" ? "研究总览" : nav.find(([, key]) => key === view)?.[0] ?? view}</h1>
@@ -866,7 +923,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
               <input
                 ref={searchRef}
                 className="global-search"
-                aria-label="Search tasks or symbols"
+                aria-label="搜索研究或股票代码"
                 placeholder="搜索研究或股票代码"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
@@ -874,36 +931,26 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
             </div>
             <button className="icon-button notification-button" title={`通知 · ${unreadNotifications} 条未读`} aria-label={`通知，${unreadNotifications} 条未读`} onClick={() => setView("Notifications")}><BellIcon size={16} aria-hidden="true" />{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span> : null}</button>
             <button className="icon-button" title="刷新" aria-label="刷新" onClick={() => void refresh()}><ArrowClockwiseIcon size={16} aria-hidden="true" /></button>
-            <button className="primary-button" data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />开始今日复盘</button>
+            <button className={`primary-button${view === "Overview" || view === "Research" ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />开始今日复盘</button>
           </div>
         </header>
 
         {error && <div className="error-banner" role="alert"><WarningCircleIcon size={16} aria-hidden="true" /><strong>需要处理</strong><span>{error}</span><button onClick={() => void refresh()}>重试</button><button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => setError(null)}><XIcon size={16} aria-hidden="true" /></button></div>}
 
-        {view === "Overview" && <StrategyAgentPanel
-          profile={profile}
-          rules={rules}
-          health={health}
-          portfolio={portfolio}
-          watchlists={watchlists}
-          tasks={tasks}
-          dataTone={dataState.tone}
-          onNavigate={setView}
-        />}
         {view === "Overview" && <SetupGuide setup={setup} onNavigate={setView} onCreateReview={() => void createTask()} />}
         {view === "Overview" && <AttentionFeed notifications={notifications} onOpenTask={(taskId) => {
-          setSelectedId(taskId);
+          openResearch(taskId);
           setView("Overview");
         }} />}
 
-        <section className="metrics">
+        {view === "Overview" && <section className="metrics" aria-label="研究统计">
           <div className="metric"><span>进行中的研究</span><strong>{counts.running}</strong><small>实时更新进度</small></div>
           <div className="metric"><span>等你确认</span><strong>{counts.approval}</strong><small>需要人工判断</small></div>
           <div className="metric"><span>被规则拦截</span><strong>{counts.blocked}</strong><small>先解决风险再行动</small></div>
           <div className="metric"><span>当前规则</span><strong>{String((rules as { version?: unknown } | null)?.version ?? "v1")}</strong><small>每次研究固定版本</small></div>
-        </section>
+        </section>}
 
-        {view === "Journal" ? <JournalView items={journalItems} summary={journalSummary} patterns={journalPatterns} onSaveCandidate={(candidateKey) => void saveJournalCandidate(candidateKey)} onReviewCandidate={(candidateId, payload) => void reviewJournalCandidate(candidateId, payload)} onFeedbackCandidate={(candidateId, usageId, rating) => void feedbackJournalCandidate(candidateId, usageId, rating)} onOpenTask={(taskId) => { selectTask(taskId); setView("Research"); }} /> :
+        {view === "Journal" ? <JournalView items={journalItems} summary={journalSummary} patterns={journalPatterns} onSaveCandidate={(candidateKey) => void saveJournalCandidate(candidateKey)} onReviewCandidate={(candidateId, payload) => void reviewJournalCandidate(candidateId, payload)} onFeedbackCandidate={(candidateId, usageId, rating) => void feedbackJournalCandidate(candidateId, usageId, rating)} onOpenTask={(taskId) => { openResearch(taskId); setView("Research"); }} /> :
           view === "Market" ? <MarketView market={market} candidates={candidates} onResearch={(symbol) => void createResearch(symbol)} onWatch={(symbol) => void saveWatchlist("Research watchlist", [symbol, ...(watchlists.find((list) => list.name === "Research watchlist")?.symbols ?? [])])} /> :
           view === "Watchlist" ? <WatchlistView watchlists={watchlists} candidates={candidates} onSaved={(name, symbols) => void saveWatchlist(name, symbols)} onResearch={(symbol) => void createResearch(symbol)} /> :
           view === "Portfolio" ? <PortfolioView portfolio={portfolio} onImported={() => void refresh()} /> :
@@ -917,22 +964,40 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
             onEnablePush={() => void enablePush()}
             pushStatus={pushStatus}
             onOpenTask={(taskId) => {
-              setSelectedId(taskId);
+              openResearch(taskId);
               setView("Overview");
             }}
           /> :
         <div className="workspace">
           <section className="queue-panel panel">
-            <div className="panel-header"><div><span className="eyebrow">研究记录</span><h2>你的研究</h2></div><span className="count">{tasks.length}</span></div>
+            <div className="panel-header"><div><span className="eyebrow">研究记录</span><h2 id="research-queue-heading" tabIndex={-1}>你的研究</h2></div><span className="count">{tasks.length}</span></div>
             <div className="queue-list">
-              {visibleTasks.length === 0 ? <EmptyState message={tasks.length === 0 ? "完成上面的设置后，开始第一次收盘复盘。" : "没有匹配的研究记录。"} /> : <TaskQueue tasks={visibleTasks} selectedId={selectedId} onSelect={selectTask} />}
+              {visibleTasks.length === 0 ? <EmptyState message={tasks.length === 0 ? "完成上面的设置后，开始第一次收盘复盘。" : "没有匹配的研究记录。"} /> : <TaskQueue tasks={visibleTasks} selectedId={selectedId} onSelect={selectTask} onOpen={openResearch} />}
             </div>
           </section>
 
           <section className="detail-panel">
-            {!detail ? <EmptyState message="选择一条研究记录，这里会显示结论、依据和风险。" /> : <ResearchDetail detail={detail} busy={busy} rawData={taskData} onApprove={approve} onControl={controlTask} onCancel={() => void cancelTask()} onRetry={() => void retryTask()} onTakeover={() => void takeoverTask()} onExport={() => void exportTaskContext()} onReplay={() => void replayTask()} onRawData={() => void loadTaskData()} onCopyLink={() => void copyTaskLink()} onCopyEvidenceLink={(evidenceId) => void copyEvidenceLink(evidenceId)} onRetrospective={(payload) => void recordRetrospective(payload)} />}
+            {showMobileDetail && <button id="return-to-research-queue" className="quiet-button research-queue-back" onClick={returnToQueue}>返回研究队列</button>}
+            {detailError && <div className="detail-load-error" role="alert">
+              <p>{detailError}</p>
+              {selectedId && <button className="quiet-button" onClick={() => void loadDetail(selectedId)}>重试读取研究</button>}
+            </div>}
+            {!detail ? selectedId
+              ? !detailError && <p className="detail-loading" role="status">正在加载研究详情…</p>
+              : <EmptyState message="选择一条研究记录，这里会显示结论、依据和风险。" />
+              : <ResearchDetail key={detail.task.id} detail={detail} busy={busy} rawData={taskData?.task_id === detail.task.id ? taskData : null} onApprove={(action) => void approve(detail.task.id, action)} onControl={controlTask} onCancel={() => void cancelTask()} onRetry={() => void retryTask()} onTakeover={() => void takeoverTask()} onExport={() => void exportTaskContext()} onReplay={() => void replayTask()} onRawData={() => void loadTaskData()} onCopyLink={() => void copyTaskLink()} onCopyEvidenceLink={(evidenceId) => void copyEvidenceLink(evidenceId)} onRetrospective={(payload) => void recordRetrospective(payload)} />}
           </section>
         </div>}
+        {view === "Overview" && <StrategyAgentPanel
+          profile={profile}
+          rules={rules}
+          health={health}
+          portfolio={portfolio}
+          watchlists={watchlists}
+          tasks={tasks}
+          dataTone={dataState.tone}
+          onNavigate={setView}
+        />}
       </main>
     </div>
   );
@@ -1149,7 +1214,7 @@ function JournalView({ items, summary, patterns, onSaveCandidate, onReviewCandid
           <input value={symbolFilter} onChange={(event) => setSymbolFilter(event.target.value)} placeholder="筛选股票代码" aria-label="按股票代码筛选" />
           <select value={intentFilter} onChange={(event) => setIntentFilter(event.target.value)} aria-label="按决策意图筛选">
             <option value="all">全部决策</option>
-            {intents.map((intent) => <option value={intent} key={intent}>{intent}</option>)}
+            {intents.map((intent) => <option value={intent} key={intent}>{statusLabel(intent)}</option>)}
           </select>
         </div>
         {visibleItems.length === 0 ? <EmptyState message={items.length === 0 ? "还没有可回看的决策记录。" : "没有符合筛选条件的记录。"} /> :
@@ -1162,9 +1227,9 @@ function JournalView({ items, summary, patterns, onSaveCandidate, onReviewCandid
               <div className="journal-main">
                 <div className="journal-heading">
                   <strong>{record.subject.symbol ?? (record.subject.symbols.join(", ") || "未命名标的")}</strong>
-                  <span className={`decision-pill decision-${String(record.intent).toLowerCase()}`}>{record.intent}</span>
+                  <span className={`decision-pill decision-${String(record.intent).toLowerCase()}`}>{statusLabel(record.intent)}</span>
                 </div>
-                <p>{record.next_action ?? "没有记录下一步动作。"}</p>
+                <p>{record.next_action ? nextActionLabel(record.next_action) : "没有记录下一步动作。"}</p>
                 <div className="journal-meta">
                   <span>规则 {String(record.rule_snapshot_id ?? "—")}</span>
                   <span>依据 {item.evidence_summary.count}</span>
@@ -1344,10 +1409,11 @@ const TASK_GROUPS: Array<{ key: string; label: string; statuses: string[] }> = [
   { key: "failed", label: "失败或过期", statuses: ["RETRYABLE", "FAILED", "TIMEOUT", "EXPIRED", "CANCELLED"] },
 ];
 
-function TaskQueue({ tasks, selectedId, onSelect }: {
+function TaskQueue({ tasks, selectedId, onSelect, onOpen }: {
   tasks: Task[];
   selectedId: string | null;
   onSelect: (taskId: string) => void;
+  onOpen: (taskId: string) => void;
 }) {
   const orderedTasks = TASK_GROUPS.flatMap((group) => tasks.filter((task) => group.statuses.includes(task.status)));
   const moveSelection = (currentId: string | null, direction: 1 | -1) => {
@@ -1383,7 +1449,7 @@ function TaskQueue({ tasks, selectedId, onSelect }: {
     if (!grouped.length) return null;
     return <section className="task-group" key={group.key}>
       <div className="task-group-heading"><span>{group.label}</span><strong>{grouped.length}</strong></div>
-      {grouped.map((task) => <button id={`task-${task.id}`} role="option" aria-selected={selectedId === task.id} key={task.id} className={`queue-row ${selectedId === task.id ? "selected" : ""}`} onClick={() => onSelect(task.id)}>
+      {grouped.map((task) => <button id={`task-${task.id}`} role="option" aria-selected={selectedId === task.id} key={task.id} className={`queue-row ${selectedId === task.id ? "selected" : ""}`} onClick={() => onOpen(task.id)}>
         <div className="queue-row-top"><StatusBadge status={task.status} /><time>{formatDate(task.created_at)}</time></div>
         <strong>{task.trigger_type === "MarketClose" ? "收盘市场复盘" : task.trigger_type}</strong>
         <span>{String(task.target.as_of ?? "Local fixture")} · {task.id.slice(-6)}</span>
@@ -1562,9 +1628,9 @@ function MarketView({ market, candidates, onResearch, onWatch }: { market: Recor
     <Panel title="市场快照" eyebrow={`截至 ${String(market.as_of)}`} wide>
       <div className="snapshot-head">
         <div><strong className="big-number">{Math.round(Number(market.breadth) * 100)}%</strong><span>市场宽度</span></div>
-        <div><strong className="big-number">{String(market.index_trend)}</strong><span>指数趋势</span></div>
-        <div><strong className="big-number">{String(market.volatility)}</strong><span>波动率</span></div>
-        <div><strong className="big-number">{String(market.source)}</strong><span>数据来源</span></div>
+        <div><strong className="big-number">{localizedLabel(trendLabels, market.index_trend)}</strong><span>指数趋势</span></div>
+        <div><strong className="big-number">{rulePercent(market.volatility)}</strong><span>波动率</span></div>
+        <div><strong className="big-number">{market.source === "fixture" ? "回放数据" : String(market.source)}</strong><span>数据来源</span></div>
       </div>
     </Panel>
     <div className="wide"><MarketCharts market={market} indices={indices} /></div>
@@ -1646,7 +1712,7 @@ function PortfolioView({ portfolio, onImported }: { portfolio: Record<string, un
       setStatus(error instanceof Error ? error.message : "Import failed");
     }
   };
-  return <section className="control-grid"><Panel title="持仓快照" eyebrow={String(portfolio?.as_of ?? "暂无快照")}><div className="snapshot-head compact"><div><strong className="big-number">{portfolio ? Number(portfolio.total_value).toLocaleString() : "—"}</strong><span>总市值</span></div><div><strong className="big-number">{portfolio ? `${(Number(portfolio.drawdown) * 100).toFixed(1)}%` : "—"}</strong><span>回撤</span></div></div><div className="data-table">{positions.map((position) => <div className="data-row" key={String(position.symbol)}><strong>{String(position.symbol)}</strong><span>{String(position.sector)}</span><span>{(Number(position.weight) * 100).toFixed(1)}%</span></div>)}</div></Panel><div className="wide"><PortfolioCharts portfolio={portfolio} positions={positions} /></div><Panel title="导入持仓" eyebrow="CSV、Excel 或手工 JSON"><div className="form-row"><select value={format} onChange={(event) => setFormat(event.target.value as "csv" | "xlsx" | "manual")}><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="manual">手工 JSON</option></select><input type="file" accept=".csv,.xlsx" onChange={(event) => void handleFile(event.target.files?.[0])} /><button className="primary-button" onClick={() => void importPortfolio()}>导入</button></div><textarea className="import-area" value={typeof content === "string" ? content : `[${fileName || "Excel 文件"}已加载]`} onChange={(event) => setContent(event.target.value)} readOnly={typeof content !== "string"} /><span className="form-hint">{status || "导入的快照会在本地保存版本并记录审计轨迹。"}</span></Panel></section>;
+  return <section className="control-grid portfolio-grid"><Panel title="持仓快照" eyebrow={String(portfolio?.as_of ?? "暂无快照")}><div className="snapshot-head compact"><div><strong className="big-number">{portfolio ? Number(portfolio.total_value).toLocaleString() : "—"}</strong><span>总市值</span></div><div><strong className="big-number">{portfolio ? `${(Number(portfolio.drawdown) * 100).toFixed(1)}%` : "—"}</strong><span>回撤</span></div></div><div className="data-table">{positions.map((position) => <div className="data-row" key={String(position.symbol)}><strong>{String(position.symbol)}</strong><span>{String(position.sector)}</span><span>{(Number(position.weight) * 100).toFixed(1)}%</span></div>)}</div></Panel><div className="portfolio-charts"><PortfolioCharts portfolio={portfolio} positions={positions} /></div><Panel title="导入持仓" eyebrow="CSV、Excel 或手工 JSON" wide><div className="form-row"><select value={format} onChange={(event) => setFormat(event.target.value as "csv" | "xlsx" | "manual")}><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="manual">手工 JSON</option></select><input type="file" accept=".csv,.xlsx" onChange={(event) => void handleFile(event.target.files?.[0])} /><button className="primary-button" onClick={() => void importPortfolio()}>导入</button></div><textarea className="import-area" value={typeof content === "string" ? content : `[${fileName || "Excel 文件"}已加载]`} onChange={(event) => setContent(event.target.value)} readOnly={typeof content !== "string"} /><span className="form-hint">{status || "导入的快照会在本地保存版本并记录审计轨迹。"}</span></Panel></section>;
 }
 
 function ProfileView({ profile, onSaved, localCredentials = false }: { profile: Record<string, unknown> | null; onSaved: () => void; localCredentials?: boolean }) {
@@ -1770,7 +1836,6 @@ function DeepSeekSettings({ onSaved }: { onSaved: () => void }) {
 }
 
 function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unknown> | null; evaluation?: RuleResult | null; onSaved: () => void }) {
-  if (!rules) return <section className="single-panel panel"><EmptyState message="规则快照不可用" /></section>;
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
   useEffect(() => setDraft(JSON.stringify(rules, null, 2)), [rules]);
@@ -1783,7 +1848,36 @@ function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unkno
       setStatus(error instanceof Error ? error.message : "规则必须是有效 JSON");
     }
   };
-  return <section className="control-grid"><Panel title={`规则集 ${String(rules.version)}`} eyebrow="确定性门禁" wide><textarea className="import-area" value={draft} onChange={(event) => setDraft(event.target.value)} /><div className="form-row"><button className="primary-button" onClick={() => void save()}>保存版本</button><span className="form-hint">{status || "新版本只影响之后创建的研究，已有研究继续使用原快照。"}</span></div></Panel><Panel title="当前研究的规则门禁" eyebrow="不由模型决定"><RuleList rules={evaluation ?? undefined} /><p className="form-hint">{evaluation ? "这里显示当前研究实际执行过的规则。" : "选择一条研究，查看它执行过的市场和持仓门禁。"}</p></Panel></section>;
+  if (!rules) return <section className="single-panel panel"><EmptyState message="规则快照不可用" /></section>;
+  const marketGate = rules.market_gate as Record<string, unknown> | undefined;
+  const thresholds = [
+    ["单只股票仓位上限", rulePercent(rules.max_position_weight)],
+    ["单只 ETF 仓位上限", rulePercent(rules.max_etf_weight)],
+    ["行业仓位上限", rulePercent(rules.max_sector_weight)],
+    ["回撤预警", rulePercent(rules.drawdown_warning)],
+    ["回撤限制", rulePercent(rules.drawdown_limit)],
+    ["严重回撤阈值", rulePercent(rules.critical_drawdown)],
+    ["市场宽度下限", rulePercent(marketGate?.breadth_min)],
+    ["波动率上限", rulePercent(marketGate?.volatility_max)],
+  ];
+  return <section className="control-grid">
+    <Panel title={`规则集 ${String(rules.version)}`} eyebrow="当前配置">
+      <dl className="rule-config-grid">{thresholds.map(([label, value]) => <div className="config-item" key={label}>
+        <dt>{label}</dt><dd>{value}</dd>
+      </div>)}</dl>
+      <details className="technical-disclosure">
+        <summary>查看和编辑完整规则（JSON）</summary>
+        <textarea aria-label="规则 JSON" className="import-area" value={draft} onChange={(event) => setDraft(event.target.value)} />
+        <div className="form-row">
+          <button className="primary-button" onClick={() => void save()}>保存版本</button>
+          <span className="form-hint" role="status">{status || "新版本只影响之后创建的研究，已有研究继续使用原快照。"}</span>
+        </div>
+      </details>
+    </Panel>
+    <Panel title="当前研究的规则检查" eyebrow={evaluation?.rule_snapshot_id ?? "研究快照"}>
+      {evaluation ? <RuleList rules={evaluation} /> : <EmptyState message="选择一条研究，查看当时执行的规则。" />}
+    </Panel>
+  </section>;
 }
 
 function DataHealthView({ health, syncResult, onSyncResult }: {
@@ -1813,17 +1907,56 @@ function DataHealthView({ health, syncResult, onSyncResult }: {
   const marketQuality = (syncResult?.market_quality as Record<string, unknown> | undefined) ?? {};
   const completeness = Number(marketQuality.field_completeness ?? 0);
   const failures = Array.isArray(syncResult?.failures) ? syncResult.failures.length : 0;
-  return <section className="control-grid"><Panel title="运行时" eyebrow={health?.runtime === "cloud" ? "云端执行环境" : health?.runtime === "local" ? "本地执行环境" : "执行环境"}><div className="health-list"><div><span>状态</span><strong>{health?.status ?? "未知"}</strong></div><div><span>模式</span><strong>{health?.runtime ?? "未知"}</strong></div><div><span>数据源</span><strong>{health?.provider.status ?? "未知"}</strong></div><div><span>模型</span><strong>{health?.llm.model ?? "deepseek-flash"} · {health?.llm.credentials_configured ? "已配置" : "需要凭据"}</strong></div></div></Panel><Panel title="调度与数据" eyebrow="数据源同步控制"><div className="health-list"><div><span>调度</span><strong>{health?.scheduler?.enabled ? "运行中" : "已停止"}</strong></div><div><span>收盘时间</span><strong>{health?.scheduler?.close_time ?? "15:05"}</strong></div><div><span>时区</span><strong>{health?.scheduler?.timezone ?? "Asia/Shanghai"}</strong></div><div><span>最近质量</span><strong>{String(syncResult?.quality ?? "尚未同步")}</strong></div><div><span>字段完整度</span><strong>{syncResult ? `${(completeness * 100).toFixed(1)}%` : "—"}</strong></div><div><span>失败数</span><strong>{syncResult ? failures : "—"}</strong></div></div><div className="form-row"><button className="quiet-button" onClick={() => void toggleScheduler()}>{health?.scheduler?.enabled ? "停止调度" : "开启调度"}</button><button className="primary-button" onClick={() => void sync()}>同步市场数据</button></div><span className="form-hint">{status || "实时同步会记录原始载荷、标准化数据和质量状态。"}</span></Panel><Panel title="数据质量约定" eyebrow="快照检查"><div className="rationale"><span>✓</span><p>每个快照都会保存 as_of、observed_at、source 和 quality。</p></div><div className="rationale"><span>✓</span><p>未来时间或无效时间戳会被降级并显示为失败。</p></div><div className="rationale"><span>✓</span><p>过期或不可用的数据会阻止受影响的研究。</p></div></Panel></section>;
+  return <section className="control-grid"><Panel title="运行时" eyebrow={health?.runtime === "cloud" ? "云端执行环境" : health?.runtime === "local" ? "本地执行环境" : "执行环境"}><div className="health-list"><div><span>状态</span><strong>{localizedLabel(healthLabels, health?.status, "未知")}</strong></div><div><span>模式</span><strong>{localizedLabel(healthLabels, health?.runtime, "未知")}</strong></div><div><span>数据源</span><strong>{localizedLabel(healthLabels, health?.provider.status, "未知")}</strong></div><div><span>模型</span><strong>{health?.llm.model ?? "deepseek-flash"} · {health?.llm.credentials_configured ? "已配置" : "需要凭据"}</strong></div></div></Panel><Panel title="调度与数据" eyebrow="数据源同步控制"><div className="health-list"><div><span>调度</span><strong>{health?.scheduler?.enabled ? "运行中" : "已停止"}</strong></div><div><span>收盘时间</span><strong>{health?.scheduler?.close_time ?? "15:05"}</strong></div><div><span>时区</span><strong>{health?.scheduler?.timezone ?? "Asia/Shanghai"}</strong></div><div><span>最近质量</span><strong>{localizedLabel(qualityLabels, syncResult?.quality, "尚未同步")}</strong></div><div><span>字段完整度</span><strong>{syncResult ? `${(completeness * 100).toFixed(1)}%` : "—"}</strong></div><div><span>失败数</span><strong>{syncResult ? failures : "—"}</strong></div></div><div className="form-row"><button className="quiet-button" onClick={() => void toggleScheduler()}>{health?.scheduler?.enabled ? "停止调度" : "开启调度"}</button><button className="primary-button" onClick={() => void sync()}>同步市场数据</button></div><span className="form-hint">{status || "实时同步会记录原始载荷、标准化数据和质量状态。"}</span></Panel><Panel title="数据质量约定" eyebrow="快照检查"><div className="rationale"><span>✓</span><p>每个快照都会保存 as_of、observed_at、source 和 quality。</p></div><div className="rationale"><span>✓</span><p>未来时间或无效时间戳会被降级并显示为失败。</p></div><div className="rationale"><span>✓</span><p>过期或不可用的数据会阻止受影响的研究。</p></div></Panel></section>;
 }
+
+const auditEventLabels: Record<string, string> = {
+  TASK_QUEUED: "任务进入队列",
+  TASK_STATUS: "任务状态更新",
+  STAGE_STARTED: "阶段开始",
+  STAGE_COMPLETED: "阶段完成",
+  STAGE_TIMEOUT: "阶段超时",
+  PROVIDER_ATTEMPT: "请求数据源",
+  PROVIDER_FALLBACK: "切换备用数据源",
+  DATA_SNAPSHOT_READY: "数据快照就绪",
+  EVIDENCE_SAVED: "保存证据",
+  RULES_EVALUATED: "完成规则检查",
+  AGENT_STARTED: "Agent 开始分析",
+  AGENT_COMPLETED: "Agent 完成分析",
+  DECISION_SYNTHESIZED: "生成研究结论",
+  HUMAN_APPROVAL_REQUESTED: "等待人工审批",
+  APPROVAL_RECORDED: "保存审批记录",
+  RETROSPECTIVE_RECORDED: "保存复盘记录",
+};
 
 function AuditView({ detail }: { detail: TaskDetail | null }) {
   if (!detail) return <section className="single-panel panel"><EmptyState message="选择任务查看不可变审计轨迹。" /></section>;
-  return <section className="single-panel panel"><div className="panel-header"><div><span className="eyebrow">追加式审计</span><h2>{detail.task.id}</h2></div><StatusBadge status={detail.task.status} /></div><div className="audit-list">{detail.events.map((event, index) => <div className="audit-row" key={`${event.created_at}-${index}`}><time>{formatDate(event.created_at)}</time><strong>{event.event_type}</strong><code>{JSON.stringify(event.payload)}</code></div>)}</div></section>;
+  return <section className="single-panel panel" key={detail.task.id}>
+    <div className="panel-header">
+      <div><span className="eyebrow">审计 · {detail.events.length} 条事件</span><h2>{detail.task.id}</h2></div>
+      <StatusBadge status={detail.task.status} />
+    </div>
+    <div className="audit-list">{detail.events.map((event, index) => <details className="audit-row" key={`${event.created_at}-${index}`}>
+      <summary>
+        <time dateTime={event.created_at}>{formatDate(event.created_at)}</time>
+        <strong>{localizedLabel(auditEventLabels, event.event_type)}</strong>
+        {typeof event.payload.status === "string" && <span>{statusLabel(event.payload.status)}</span>}
+      </summary>
+      <div className="audit-payload"><code>{event.event_type}</code><pre>{JSON.stringify(event.payload, null, 2)}</pre></div>
+    </details>)}</div>
+  </section>;
 }
 
 function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel, onRetry, onTakeover, onExport, onReplay, onRawData, onCopyLink, onCopyEvidenceLink, onRetrospective }: { detail: TaskDetail; busy: boolean; rawData: TaskDataResponse | null; onApprove: (action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH") => void; onControl: (action: "pause" | "resume") => void; onCancel: () => void; onRetry: () => void; onTakeover: () => void; onExport: () => void; onReplay: () => void; onRawData: () => void; onCopyLink: () => void; onCopyEvidenceLink: (evidenceId: string) => void; onRetrospective: (payload: { action_taken: string; outcome: Record<string, unknown>; notes?: string; observed_at?: string | null }) => void }) {
   const decision = detail.decision;
   const rules = decision?.rationale.rules;
+  const ruleReasons = [...(rules?.reasons ?? []), ...(rules?.warnings ?? [])];
+  const firstBlocker = rules?.reasons[0];
+  const needsReview = detail.task.status === "WAITING_APPROVAL";
+  const canApprove = needsReview && detail.result_metadata?.action_eligible === true;
+  const symbol = String(detail.task.target.symbol ?? "").trim();
+  const dataDate = String(detail.task.target.as_of ?? "—");
+  const taskTitle = detail.task.trigger_type === "MarketClose" ? "收盘市场复盘" : symbol ? `${symbol} 研究` : detail.task.trigger_type;
   const [evidenceQuery, setEvidenceQuery] = useState("");
   const [evidenceQualityFilter, setEvidenceQualityFilter] = useState("all");
   const evidence = detail.evidence.filter((item) => {
@@ -1834,7 +1967,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
   });
   return <div className="detail-content">
     <div className="detail-heading">
-      <div><span className="eyebrow">{detail.task.trigger_type} · {detail.task.id}</span><h2>收盘市场复盘</h2><p>截至 {String(detail.task.target.as_of ?? "—")} 的日线快照，经过市场、持仓和风险协作。</p></div>
+      <div><span className="eyebrow">{detail.task.trigger_type} · {detail.task.id}</span><h2>{taskTitle}</h2></div>
       <div className="detail-actions">
         <StatusBadge status={detail.task.status} />
         <button className="icon-button" title="复制链接" aria-label="复制链接" onClick={onCopyLink} disabled={busy}><LinkSimpleIcon size={16} aria-hidden="true" /></button>
@@ -1848,12 +1981,17 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
       </div>
     </div>
     <div className="decision-strip">
-      <div><span className="eyebrow">研究结论</span><strong className={`decision-${(decision?.status ?? "PENDING").toLowerCase()}`}>{decision?.status ?? "PENDING"}</strong><span>{decision?.next_action ?? "任务正在准备中"}</span></div>
-      <div className="decision-meta"><span>信心 <b>{decision?.confidence ?? "—"}</b></span><span>风险 <b>{decision?.risk_level ?? "—"}</b></span><span>截至 <b>{String(detail.task.target.as_of ?? "—")}</b></span></div>
+      <div><span className="eyebrow">研究结论</span><strong className={`decision-${(decision?.status ?? "PENDING").toLowerCase()}`}>{statusLabel(decision?.status ?? "PENDING")}</strong>
+        {firstBlocker && <p className="decision-reason">{ruleReasonLabel(firstBlocker)} · {ruleComparison(firstBlocker)}{(rules?.reasons.length ?? 0) > 1 && <> · <a href="#research-rules">查看全部 {rules?.reasons.length} 项</a></>}</p>}
+        <span>{decision?.next_action ? `下一步：${nextActionLabel(decision.next_action)}` : "当前尚无研究结论"}</span></div>
+      <div className="decision-meta"><span>信心 <b>{localizedLabel(levelLabels, decision?.confidence)}</b></span><span>风险 <b>{localizedLabel(levelLabels, decision?.risk_level)}</b></span><span>数据日期 <b>{dataDate}</b></span></div>
     </div>
     <div className="result-summary" role="status">
       <strong>结果：{["QUEUED", "PLANNING", "RUNNING", "REVIEWING", "PAUSED"].includes(detail.task.status) ? "处理中" : ({ complete: "完整", partial: "部分结果", none: "无可用结果", unknown: "历史完整性未知" })[detail.result_metadata?.completion ?? "unknown"]}</strong>
-      <span> · 数据 {detail.result_metadata?.quality_summary ?? "unknown"} · {detail.result_metadata?.action_eligible ? "可进入审批" : "仅供研究"}</span>
+      <span> · 数据 {localizedLabel(qualityLabels, detail.result_metadata?.quality_summary, "未知")} · {canApprove ? "可确认建议" : needsReview ? "待处理 · 仅供研究" : "仅供研究"}</span>
+      {needsReview && <div className="review-jump">
+        <a className="quiet-button" href="#research-approval" onClick={() => document.getElementById("research-approval")?.focus()}>查看处理选项</a>
+      </div>}
       {!!detail.result_metadata?.reasons?.length && <details><summary>限制与缺口 ({detail.result_metadata.reasons.length})</summary>
         {detail.result_metadata.reasons.map((reason, index) => <p key={`${reason.code}-${index}`}>
           <a href="#research-flow" onClick={() => document.getElementById("research-flow")?.setAttribute("open", "")}>{reason.code}</a>
@@ -1862,18 +2000,16 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
         </p>)}
       </details>}
     </div>
-    <RunFlow taskId={detail.task.id} revision={detail.events.length} />
-    <AgentTimelineChart
-      trace={detail.trace}
-      asOf={String(detail.task.target.as_of ?? "—")}
-      source={String(detail.task.data_snapshot_id ?? "task snapshot")}
-    />
     <div className="detail-grid">
-      <Panel title="为什么得到这个结论" eyebrow="结论依据">
-        {decision?.rationale.items.map((item) => <p className="rationale" key={item}><span>•</span>{item}</p>) ?? <EmptyState message="等待结构化结论" />}
-      </Panel>
-      <Panel title="规则" eyebrow={`规则 ${rules?.rule_snapshot_id ?? "v1"}`}>
+      <Panel title="规则检查" eyebrow={rules?.rule_snapshot_id ?? "等待审核"}>
+        <span id="research-rules" />
         <RuleList rules={rules} />
+      </Panel>
+      <Panel title="为什么得到这个结论" eyebrow="结论依据">
+        {decision?.rationale.items.map((item) => {
+          const reason = ruleReasons.find((candidate) => candidate.message === item);
+          return <p className="rationale" key={item}><span>•</span>{reason ? ruleReasonLabel(reason) : item}</p>;
+        }) ?? <EmptyState message="等待结构化结论" />}
       </Panel>
       <Panel title="依据" eyebrow={`${evidence.length} / ${detail.evidence.length} 条引用来源`} wide>
         <span id="research-evidence" />
@@ -1892,28 +2028,39 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
       <Panel title="多空观点" eyebrow="结构化分歧" wide>
         <DebateView debate={detail.debate ?? {}} />
       </Panel>
-      <Panel title="研究过程" eyebrow={`${detail.trace.length} 次运行`} wide>
-        <span id="research-trace" />
-        <div className="trace-list">{detail.trace.map((trace) => <TraceRowView key={trace.id ?? trace.agent_name} trace={trace} toolCalls={(detail.tool_calls ?? []).filter((call) => call.agent_run_id === trace.id)} />)}</div>
-        {detail.llm_usage && detail.llm_usage.records > 0 && <div className="trace-usage">
-          <span>模型用量</span>
-          <strong>{detail.llm_usage.total_tokens.toLocaleString()} tokens</strong>
-          <small>{detail.llm_usage.request_count} 次请求 · ${detail.llm_usage.cost_usd.toFixed(4)}</small>
-        </div>}
-        {detail.llm_ledger && <p className="form-hint">费用 ${detail.llm_ledger.known_cost_usd} · 保守占用 ${detail.llm_ledger.conservative_reserved_usd} · {detail.llm_ledger.unknown_count} 次费用未知 · 日预算按 UTC 结算</p>}
-      </Panel>
     </div>
-    {rawData && <TaskDataPanel data={rawData} />}
-    <div className="approval-bar">
-      <div><span className="eyebrow">由你确认</span><strong>建议只代表研究意图，不代表成交。</strong><small>规则版本 {detail.task.rule_snapshot_id ?? "—"} · 数据快照 {detail.task.data_snapshot_id ?? "—"}</small></div>
-      {decision?.status === "WAITING_APPROVAL" || detail.task.status === "WAITING_APPROVAL" ? <div className="approval-actions">
+    {needsReview && <section className="approval-bar" id="research-approval" tabIndex={-1} aria-labelledby="research-approval-heading">
+      <div>
+        <h3 id="research-approval-heading">{canApprove ? "确认研究建议" : "处理研究结果"}</h3>
+        <strong>{canApprove ? "确认会记录你的研究决定。" : "当前结果仅供研究，可记录处理决定。"}</strong>
+        <small>风险 {localizedLabel(levelLabels, decision?.risk_level)} · 规则版本 {detail.task.rule_snapshot_id ?? "—"} · 数据日期 {dataDate}</small>
+        <small>数据快照 {detail.task.data_snapshot_id ?? "—"}</small>
+      </div>
+      <div className="approval-actions">
         <button className="quiet-button" onClick={() => onApprove("REQUEST_MORE_RESEARCH")} disabled={busy}>继续研究</button>
-        <button className="quiet-button" onClick={() => onApprove("MARK_AS_WATCH")} disabled={busy}>加入观察</button>
+        {symbol && <button className="quiet-button" onClick={() => onApprove("MARK_AS_WATCH")} disabled={busy}>加入观察</button>}
         <button className="quiet-button" onClick={() => onApprove("NO_ACTION")} disabled={busy}>暂不行动</button>
         <button className="danger-button" onClick={() => onApprove("REJECT")} disabled={busy}>拒绝</button>
-        {detail.result_metadata?.action_eligible && <button className="primary-button" onClick={() => onApprove("APPROVE")} disabled={busy}>确认</button>}
-      </div> : <span className="form-hint">当前结果不需要人工批准。</span>}
-    </div>
+        {canApprove && <button className="primary-button" onClick={() => onApprove("APPROVE")} disabled={busy}>确认建议</button>}
+      </div>
+    </section>}
+    <RunFlow taskId={detail.task.id} revision={detail.events.length} />
+    <AgentTimelineChart
+      trace={detail.trace}
+      asOf={String(detail.task.target.as_of ?? "—")}
+      source={String(detail.task.data_snapshot_id ?? "task snapshot")}
+    />
+    <Panel title="研究过程" eyebrow={`${detail.trace.length} 次运行`} wide>
+      <span id="research-trace" />
+      <div className="trace-list">{detail.trace.map((trace) => <TraceRowView key={trace.id ?? trace.agent_name} trace={trace} toolCalls={(detail.tool_calls ?? []).filter((call) => call.agent_run_id === trace.id)} />)}</div>
+      {detail.llm_usage && detail.llm_usage.records > 0 && <div className="trace-usage">
+        <span>模型用量</span>
+        <strong>{detail.llm_usage.total_tokens.toLocaleString()} tokens</strong>
+        <small>{detail.llm_usage.request_count} 次请求 · ${detail.llm_usage.cost_usd.toFixed(4)}</small>
+      </div>}
+      {detail.llm_ledger && <p className="form-hint">费用 ${detail.llm_ledger.known_cost_usd} · 保守占用 ${detail.llm_ledger.conservative_reserved_usd} · {detail.llm_ledger.unknown_count} 次费用未知 · 日预算按 UTC 结算</p>}
+    </Panel>
+    {rawData && <TaskDataPanel data={rawData} />}
     <RetrospectivePanel retrospectives={detail.retrospectives ?? []} busy={busy} onSubmit={onRetrospective} />
   </div>;
 }
@@ -2058,6 +2205,48 @@ function Panel({ title, eyebrow, wide, children }: { title: string; eyebrow: str
   return <section className={`sub-panel ${wide ? "wide" : ""}`}><div className="panel-header"><div><span className="eyebrow">{eyebrow}</span><h3>{title}</h3></div></div>{children}</section>;
 }
 
+const ruleReasonLabels: Record<string, string> = {
+  STALE_DATA: "行情快照已过期",
+  DATA_UNAVAILABLE: "行情快照未通过验证",
+  MARKET_VOLATILITY_FAILED: "市场波动率超过阈值",
+  RISK_REVIEW_FAILED: "组合回撤触及严重阈值",
+  DRAWDOWN_LIMIT: "组合回撤触及限制",
+  DRAWDOWN_WARNING: "组合回撤触及预警阈值",
+  EVIDENCE_INSUFFICIENT: "证据条数未达到最低要求",
+};
+
+function ruleReasonLabel(reason: RuleReason) {
+  const position = reason.message.match(/^(\S+) weight exceeds the configured position limit\.$/);
+  const sector = reason.message.match(/^Sector exposure for (.+) exceeds the configured limit\.$/);
+  if (position) return `${position[1]} 仓位超限`;
+  if (sector) return `${sector[1]}行业仓位超限`;
+  if (reason.code === "MARKET_CONDITION_FAILED") {
+    return typeof reason.actual === "number" ? "市场宽度低于阈值" : "指数趋势未满足规则";
+  }
+  return Object.hasOwn(ruleReasonLabels, reason.code) ? ruleReasonLabels[reason.code] : reason.message;
+}
+
+function rulePercent(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value.toLocaleString("zh-CN", { style: "percent", maximumFractionDigits: 2 })
+    : "—";
+}
+
+function ruleComparison(reason: RuleReason) {
+  const { code, actual, expected } = reason;
+  const threshold = typeof expected === "string" ? expected.match(/^([<>]=?)\s*(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)$/i) : null;
+  const ratio = [
+    "POSITION_LIMIT_EXCEEDED", "ETF_POSITION_LIMIT", "SECTOR_CONCENTRATION", "DRAWDOWN_LIMIT",
+    "DRAWDOWN_WARNING", "RISK_REVIEW_FAILED", "MARKET_VOLATILITY_FAILED", "MARKET_CONDITION_FAILED",
+  ].includes(code) && typeof actual === "number" && threshold;
+  const labels = { ...qualityLabels, ...trendLabels };
+  const actualLabel = ratio ? rulePercent(actual) : localizedLabel(labels, actual);
+  const expectedLabel = threshold
+    ? `${threshold[1].replace("<=", "≤").replace(">=", "≥")} ${ratio ? rulePercent(Number(threshold[2])) : threshold[2]}`
+    : localizedLabel(labels, expected);
+  return `实际 ${actualLabel} · 要求 ${expectedLabel}`;
+}
+
 function RuleList({ rules }: { rules?: RuleResult }) {
   if (!rules) return <EmptyState message="等待规则审核" />;
   const rows = [
@@ -2065,13 +2254,23 @@ function RuleList({ rules }: { rules?: RuleResult }) {
     ...rules.warnings.map((reason) => ({ ...reason, state: "WARN" })),
   ];
   if (!rows.length) return <p className="pass-line"><span>✓</span> 所有 P0 门禁通过</p>;
-  return <div className="rule-list">{rows.map((row) => <div className="rule-row" key={`${row.code}-${row.message}`}><span className={`rule-state ${row.state.toLowerCase()}`}>{row.state === "BLOCKED" ? "已拦截" : "警告"}</span><div><strong>{row.code}</strong><p>{row.message}</p></div><small>{String(row.actual)} / {String(row.expected)}</small></div>)}</div>;
+  return <div className="rule-list">{rows.map((row) => <div className="rule-row" key={`${row.code}-${row.message}`}>
+    <span className={`rule-state ${row.state.toLowerCase()}`}>{row.state === "BLOCKED" ? "已拦截" : "警告"}</span>
+    <div>
+      <strong>{ruleReasonLabel(row)}</strong>
+      <p>{ruleComparison(row)}</p>
+      <details className="rule-original">
+        <summary>规则详情</summary>
+        <code>{row.code}</code>
+        <p>{row.message}</p>
+      </details>
+    </div>
+  </div>)}</div>;
 }
 
 function EvidenceRow({ evidence, onCopyLink }: { evidence: Evidence; onCopyLink: () => void }) {
   const quality = evidenceQuality(evidence);
   const usedBy = evidence.used_by?.length ? evidence.used_by.join(" · ") : "尚未关联研究过程";
-  const qualityLabels: Record<string, string> = { verified: "已验证", partial: "部分验证", stale: "已过期", unavailable: "不可用" };
   return <article id={`evidence-${evidence.id}`} className="evidence-row" tabIndex={0} aria-label={`依据：${evidence.title}`}>
     <div className="evidence-icon"><ArrowUpRightIcon size={16} aria-hidden="true" /></div>
     <div>

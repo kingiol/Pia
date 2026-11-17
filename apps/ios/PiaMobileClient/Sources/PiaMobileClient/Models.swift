@@ -133,6 +133,14 @@ public struct TaskResponse: Codable, Sendable {
     public let task: ResearchTask
 }
 
+public struct ResultMetadata: Codable, Sendable {
+    public let actionEligible: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case actionEligible = "action_eligible"
+    }
+}
+
 public struct TaskDetailResponse: Codable, Sendable {
     public let task: ResearchTask
     public let decision: [String: JSONValue]?
@@ -140,6 +148,21 @@ public struct TaskDetailResponse: Codable, Sendable {
     public let trace: [[String: JSONValue]]
     public let approvals: [[String: JSONValue]]
     public let events: [[String: JSONValue]]
+    public let resultMetadata: ResultMetadata?
+
+    enum CodingKeys: String, CodingKey {
+        case task, decision, evidence, trace, approvals, events
+        case resultMetadata = "result_metadata"
+    }
+
+    public var canConfirmRecommendation: Bool {
+        task.status == .waitingApproval && resultMetadata?.actionEligible == true
+    }
+
+    public var canMarkAsWatch: Bool {
+        guard task.status == .waitingApproval, case .string(let symbol) = task.target?["symbol"] else { return false }
+        return !symbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 public struct TaskEvent: Sendable {

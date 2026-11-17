@@ -78,6 +78,41 @@ final class PiaAPIClientTests: XCTestCase {
         XCTAssertEqual(result.decision?["confidence"], .number(0.72))
     }
 
+    func testApprovalRequiresEligibilityAndWatchRequiresSingleSymbol() throws {
+        func decode(status: String, target: [String: Any], metadata: [String: Any]?) throws -> TaskDetailResponse {
+            var payload: [String: Any] = [
+                "task": [
+                    "id": "task-1", "status": status, "target": target, "trigger_type": "MarketClose",
+                    "created_at": "2026-11-07T00:00:00Z",
+                ],
+                "evidence": [], "trace": [], "approvals": [], "events": [],
+            ]
+            payload["result_metadata"] = metadata
+            return try JSONDecoder().decode(TaskDetailResponse.self, from: JSONSerialization.data(withJSONObject: payload))
+        }
+        let replay = try decode(
+            status: "WAITING_APPROVAL", target: ["symbols": ["600000.SH"]], metadata: ["action_eligible": false]
+        )
+        XCTAssertFalse(replay.canConfirmRecommendation)
+        XCTAssertFalse(replay.canMarkAsWatch)
+
+        let legacy = try decode(status: "WAITING_APPROVAL", target: ["symbol": "600000.SH"], metadata: nil)
+        XCTAssertFalse(legacy.canConfirmRecommendation)
+        XCTAssertTrue(legacy.canMarkAsWatch)
+
+        let eligible = try decode(
+            status: "WAITING_APPROVAL", target: ["symbol": "600000.SH"], metadata: ["action_eligible": true]
+        )
+        XCTAssertTrue(eligible.canConfirmRecommendation)
+        XCTAssertTrue(eligible.canMarkAsWatch)
+
+        let resolved = try decode(
+            status: "NO_ACTION", target: ["symbol": "600000.SH"], metadata: ["action_eligible": true]
+        )
+        XCTAssertFalse(resolved.canConfirmRecommendation)
+        XCTAssertFalse(resolved.canMarkAsWatch)
+    }
+
     func testApprovalRefreshesDetailAfterAcknowledgement() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
