@@ -937,7 +937,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
 
         {error && <div className="error-banner" role="alert"><WarningCircleIcon size={16} aria-hidden="true" /><strong>需要处理</strong><span>{error}</span><button onClick={() => void refresh()}>重试</button><button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => setError(null)}><XIcon size={16} aria-hidden="true" /></button></div>}
 
-        {view === "Overview" && <SetupGuide setup={setup} onNavigate={setView} onCreateReview={() => void createTask()} />}
+        {view === "Overview" && !Object.values(setup).every(Boolean) && <SetupGuide setup={setup} onNavigate={setView} onCreateReview={() => void createTask()} />}
         {view === "Overview" && <AttentionFeed notifications={notifications} onOpenTask={(taskId) => {
           openResearch(taskId);
           setView("Overview");
@@ -1451,7 +1451,7 @@ function TaskQueue({ tasks, selectedId, onSelect, onOpen }: {
       <div className="task-group-heading"><span>{group.label}</span><strong>{grouped.length}</strong></div>
       {grouped.map((task) => <button id={`task-${task.id}`} role="option" aria-selected={selectedId === task.id} key={task.id} className={`queue-row ${selectedId === task.id ? "selected" : ""}`} onClick={() => onOpen(task.id)}>
         <div className="queue-row-top"><StatusBadge status={task.status} /><time>{formatDate(task.created_at)}</time></div>
-        <strong>{task.trigger_type === "MarketClose" ? "收盘市场复盘" : task.trigger_type}</strong>
+        <strong>{task.trigger_type === "MarketClose" ? "收盘市场复盘" : task.trigger_type === "StockResearch" && task.target.symbol ? `${String(task.target.symbol)} 研究` : task.trigger_type}</strong>
         <span>{String(task.target.as_of ?? "Local fixture")} · {task.id.slice(-6)}</span>
       </button>)}
     </section>;
@@ -1951,6 +1951,9 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
   const decision = detail.decision;
   const rules = decision?.rationale.rules;
   const ruleReasons = [...(rules?.reasons ?? []), ...(rules?.warnings ?? [])];
+  const rationaleItems = decision?.rationale.items ?? [];
+  const processItems = rationaleItems.filter((item) => /^[^\n]+ observations recorded in task trace\.$/.test(item));
+  const keyRationale = rationaleItems.filter((item) => !processItems.includes(item));
   const firstBlocker = rules?.reasons[0];
   const needsReview = detail.task.status === "WAITING_APPROVAL";
   const canApprove = needsReview && detail.result_metadata?.action_eligible === true;
@@ -1967,7 +1970,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
   });
   return <div className="detail-content">
     <div className="detail-heading">
-      <div><span className="eyebrow">{detail.task.trigger_type} · {detail.task.id}</span><h2>{taskTitle}</h2></div>
+      <div><span className="eyebrow">研究简报 · {dataDate}</span><h2>{taskTitle}</h2><span className="detail-id">{detail.task.trigger_type} · {detail.task.id}</span></div>
       <div className="detail-actions">
         <StatusBadge status={detail.task.status} />
         <button className="icon-button" title="复制链接" aria-label="复制链接" onClick={onCopyLink} disabled={busy}><LinkSimpleIcon size={16} aria-hidden="true" /></button>
@@ -1992,38 +1995,27 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
       {needsReview && <div className="review-jump">
         <a className="quiet-button" href="#research-approval" onClick={() => document.getElementById("research-approval")?.focus()}>查看处理选项</a>
       </div>}
-      {!!detail.result_metadata?.reasons?.length && <details><summary>限制与缺口 ({detail.result_metadata.reasons.length})</summary>
+      {!!detail.result_metadata?.reasons?.length && <div className="result-limitations"><strong>限制与缺口 ({detail.result_metadata.reasons.length})</strong>
         {detail.result_metadata.reasons.map((reason, index) => <p key={`${reason.code}-${index}`}>
-          <a href="#research-flow" onClick={() => document.getElementById("research-flow")?.setAttribute("open", "")}>{reason.code}</a>
-          {" · "}{reason.capability ?? reason.stage_id ?? "context"}
+          <a href="#research-flow" onClick={() => document.getElementById("research-flow")?.setAttribute("open", "")}>{reason.code === "CAPABILITY_UNAVAILABLE" ? "数据能力不可用" : reason.code}</a>
+          {" · "}{({ fundamentals: "基本面数据", sources: "来源数据" } as Record<string, string>)[reason.capability ?? ""] ?? reason.capability ?? reason.stage_id ?? "context"}
           {reason.retryable && <button className="quiet-button" onClick={onRetry} disabled={busy}>新建重试</button>}
         </p>)}
-      </details>}
+      </div>}
     </div>
     <div className="detail-grid">
+      <Panel title="为什么得到这个结论" eyebrow="结论依据">
+        {keyRationale.length ? keyRationale.map((item) => {
+          const reason = ruleReasons.find((candidate) => candidate.message === item);
+          return <p className="rationale" key={item}><span>•</span>{reason ? ruleReasonLabel(reason) : item.replace(/^Research coverage missing: /, "研究覆盖缺失：")}</p>;
+        }) : <EmptyState message={decision ? "暂无线索摘要，请查看来源和研究过程。" : "等待结构化结论"} />}
+        {processItems.length > 0 && <details className="rationale-process"><summary>研究过程记录 ({processItems.length})</summary>
+          {processItems.map((item) => <p key={item}>{item}</p>)}
+        </details>}
+      </Panel>
       <Panel title="规则检查" eyebrow={rules?.rule_snapshot_id ?? "等待审核"}>
         <span id="research-rules" />
         <RuleList rules={rules} />
-      </Panel>
-      <Panel title="为什么得到这个结论" eyebrow="结论依据">
-        {decision?.rationale.items.map((item) => {
-          const reason = ruleReasons.find((candidate) => candidate.message === item);
-          return <p className="rationale" key={item}><span>•</span>{reason ? ruleReasonLabel(reason) : item}</p>;
-        }) ?? <EmptyState message="等待结构化结论" />}
-      </Panel>
-      <Panel title="依据" eyebrow={`${evidence.length} / ${detail.evidence.length} 条引用来源`} wide>
-        <span id="research-evidence" />
-        <div className="evidence-filters">
-          <input value={evidenceQuery} placeholder="筛选来源或文本" onChange={(event) => setEvidenceQuery(event.target.value)} />
-          <select value={evidenceQualityFilter} onChange={(event) => setEvidenceQualityFilter(event.target.value)}>
-            <option value="all">全部质量</option>
-            <option value="verified">已验证</option>
-            <option value="partial">部分验证</option>
-            <option value="stale">已过期</option>
-            <option value="unavailable">不可用</option>
-          </select>
-        </div>
-        <div className="evidence-list">{evidence.map((item) => <EvidenceRow key={item.id} evidence={item} onCopyLink={() => onCopyEvidenceLink(item.id)} />)}</div>
       </Panel>
       <Panel title="多空观点" eyebrow="结构化分歧" wide>
         <DebateView debate={detail.debate ?? {}} />
@@ -2044,6 +2036,20 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
         {canApprove && <button className="primary-button" onClick={() => onApprove("APPROVE")} disabled={busy}>确认建议</button>}
       </div>
     </section>}
+    <Panel title="依据" eyebrow={`${evidence.length} / ${detail.evidence.length} 条引用来源`} wide>
+        <span id="research-evidence" />
+        <div className="evidence-filters">
+          <input value={evidenceQuery} placeholder="筛选来源或文本" onChange={(event) => setEvidenceQuery(event.target.value)} />
+          <select value={evidenceQualityFilter} onChange={(event) => setEvidenceQualityFilter(event.target.value)}>
+            <option value="all">全部质量</option>
+            <option value="verified">已验证</option>
+            <option value="partial">部分验证</option>
+            <option value="stale">已过期</option>
+            <option value="unavailable">不可用</option>
+          </select>
+        </div>
+        <div className="evidence-list">{evidence.map((item) => <EvidenceRow key={item.id} evidence={item} onCopyLink={() => onCopyEvidenceLink(item.id)} />)}</div>
+    </Panel>
     <RunFlow taskId={detail.task.id} revision={detail.events.length} />
     <AgentTimelineChart
       trace={detail.trace}

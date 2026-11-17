@@ -453,6 +453,69 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .runtime-starting, .runtime-error { margin: 8px 8px 0; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .runtime-error { color: var(--danger); }
 
+/* Research workspace: make decisions and evidence easier to scan. */
+:root {
+  --canvas: #f5f6f2;
+  --surface-alt: #edf1ed;
+  --line: #e1e7e1;
+  --radius: 7px;
+}
+.main { padding-top: 30px; }
+.topbar { padding-bottom: 24px; }
+.page-heading h1 { font-size: 25px; letter-spacing: -.025em; }
+.page-context { margin-top: 6px; }
+.panel, .sub-panel, .chart-frame { border: 1px solid var(--line); border-radius: 10px; }
+.panel-header { padding: 18px 20px; }
+.panel-header h2, .panel-header h3 { letter-spacing: -.01em; }
+.metrics { gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); }
+.metric { background: var(--surface); padding: 18px 20px; }
+.metric + .metric { border-left: 0; }
+.metric strong { font-size: 26px; letter-spacing: -.03em; }
+.attention-panel { border-left: 3px solid #93b7a7; }
+.attention-panel .panel-header { padding: 16px 20px 10px; border-bottom: 0; }
+.attention-empty, .attention-list { padding-left: 20px; padding-right: 20px; }
+.strategy-agent-panel { overflow: hidden; }
+.strategy-agent-column { padding: 18px 20px; }
+.workspace { gap: 22px; }
+.queue-panel { overflow: hidden; }
+.queue-list { padding: 8px; }
+.queue-row { padding: 12px; }
+.queue-row.selected { border-color: #c7dcd1; }
+.detail-content { gap: 18px; }
+.detail-heading { flex-direction: row; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; padding: 2px 0 4px; border: 0; }
+.detail-heading h2 { margin: 5px 0 3px; font-size: 22px; letter-spacing: -.02em; }
+.detail-id { display: block; color: var(--muted); font: 11px/17px var(--mono); overflow-wrap: anywhere; }
+.detail-actions { justify-content: flex-end; }
+.detail-actions > .status { margin-right: 8px; }
+.decision-strip { align-items: flex-start; padding: 24px; border-radius: 10px; background: #263c35; }
+.decision-strip strong { margin: 7px 0; font-size: 23px; }
+.decision-meta { padding-top: 4px; gap: 20px; }
+.result-summary { padding: 13px 16px; border: 1px solid var(--line); border-radius: 8px; background: #fdfefa; color: var(--secondary); font-size: 13px; line-height: 21px; }
+.result-summary > strong { color: var(--ink); }
+.result-limitations { margin-top: 10px; color: var(--warning); }
+.result-limitations p { margin-top: 6px; }
+.result-limitations a { color: inherit; text-underline-offset: 3px; }
+.detail-grid { gap: 18px; }
+.detail-grid .panel-header { border-bottom: 0; padding-bottom: 10px; }
+.rationale { padding: 8px 20px; font-size: 14px; line-height: 23px; }
+.rationale:last-child { padding-bottom: 20px; }
+.rationale-process { margin: 8px 20px 18px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 20px; }
+.rationale-process summary { cursor: pointer; color: var(--secondary); }
+.rationale-process p { margin-top: 6px; overflow-wrap: anywhere; }
+.rule-list, .evidence-list { padding-left: 20px; padding-right: 20px; }
+.debate-grid { padding: 8px 20px 20px; }
+.debate-case { padding: 14px 16px; border: 0; border-radius: 7px; background: var(--canvas); }
+.evidence-filters { padding-left: 20px; padding-right: 20px; }
+.evidence-row p { line-height: 22px; }
+.approval-bar { border: 1px solid #b9d4c6; border-radius: 10px; background: #f3f8f4; padding: 20px; }
+.chart-frame { padding: 20px; }
+.chart-track, .chart-gauge, .chart-fill, .chart-gauge-fill { border-radius: 4px; }
+.control-grid > .sub-panel, .journal-view .sub-panel { overflow: hidden; }
+.snapshot-head > div { padding: 20px; }
+.big-number { letter-spacing: -.025em; }
+.data-row { padding: 14px 0; }
+.journal-row { padding: 18px 0; }
+
 @media (max-width: 1320px) {
   .welcome-panel { grid-template-columns: 180px minmax(0, 1fr); gap: 16px; }
   .setup-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
