@@ -328,11 +328,6 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
           warnings: [],
         })),
       ]);
-      const currentTaskInput = taskInput(healthResult, marketResult);
-      const candidateResult = await api.candidates(
-        currentTaskInput.asOf,
-        currentTaskInput.fixture?.market,
-      );
       setTasks(taskResult.tasks);
       setTasksReady(true);
       setHealth(healthResult);
@@ -340,7 +335,6 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       setMarket(marketResult);
       setPortfolio(portfolioResult);
       setProfile(profileResult);
-      setCandidates(candidateResult.candidates);
       setWatchlists(watchlistResult.watchlists);
       setJournalItems(journalResult.items);
       setJournalSummary(journalSummaryResult);
@@ -354,6 +348,20 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         setDetail(null);
       }
       if (!selectedId && taskResult.tasks[0]) selectTask(taskResult.tasks[0].id);
+      const currentTaskInput = taskInput(healthResult, marketResult);
+      try {
+        const candidateResult = await api.candidates(
+          currentTaskInput.asOf,
+          currentTaskInput.fixture?.market,
+        );
+        setCandidates(candidateResult.candidates);
+      } catch (candidateError) {
+        setCandidates([]);
+        const message = friendlyError(candidateError, "候选扫描失败");
+        setError(message === "请求未完成：CapabilityUnavailable"
+          ? "候选扫描所需的行情暂不可用，请检查数据源和网络，稍后重试。已有快照不代表最新行情。"
+          : message);
+      }
     } catch (requestError) {
       const message = friendlyError(requestError, "无法连接运行时");
       if (/云端工作区需要重新连接|unauthorized|401/i.test(message)) setAuthRequired(true);
@@ -775,18 +783,19 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   const setup = useMemo<SetupState>(() => ({
     profile: Boolean(profile?.payload && Object.keys(profile.payload as Record<string, unknown>).length > 0),
     portfolio: Boolean(portfolio && Array.isArray(portfolio.positions) && portfolio.positions.length > 0),
-    data: health?.status === "ok" && health.provider.status === "healthy" && market?.status !== "unavailable",
+    data: health?.status === "ok" && health.provider.status === "healthy" && Boolean(market?.snapshot_id)
+      && (market?.provider_id !== "fixture" || health.provider.provider_id === "fixture"),
     review: tasks.length > 0,
   }), [health, market, portfolio, profile, tasks]);
-  const isReplayData = health?.provider?.provider_id === "fixture";
+  const isReplayData = market?.provider_id === "fixture" || market?.source === "fixture" || health?.provider?.provider_id === "fixture";
   const dataState = !health
     ? { label: "正在连接", tone: "connecting", healthLabel: "正在连接" }
     : health.status !== "ok"
       ? { label: "数据不可用", tone: "unavailable", healthLabel: "运行时异常" }
-      : health.provider.status !== "healthy" || market?.status === "unavailable"
+      : health.provider.status !== "healthy" || !market?.snapshot_id
         ? { label: "数据降级", tone: "degraded", healthLabel: "需要检查" }
         : isReplayData
-          ? { label: "回放数据", tone: "replay", healthLabel: "回放就绪" }
+          ? { label: "回放数据", tone: "replay", healthLabel: health.provider.provider_id === "fixture" ? "回放就绪" : "非实时快照" }
           : { label: "实时数据", tone: "live", healthLabel: "数据正常" };
   const visibleTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
