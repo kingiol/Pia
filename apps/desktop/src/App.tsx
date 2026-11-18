@@ -878,8 +878,13 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   }
 
   const showMobileDetail = Boolean(selectedId && mobileDetailOpen && (view === "Research" || view === "Overview"));
+  const showWindowTitlebar = isTauriRuntime() && navigator.userAgent.includes("Macintosh");
   return (
-    <div className="shell">
+    <div className={`shell${showWindowTitlebar ? " shell--macos" : ""}`}>
+      {showWindowTitlebar && <>
+        <div className="window-drag-region window-drag-region--sidebar" data-tauri-drag-region aria-hidden="true" />
+        <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
+      </>}
       <aside className={`sidebar ${navigationOpen ? "navigation-open" : ""}`} onKeyDown={(event) => {
         if (event.key === "Escape" && navigationOpen) {
           setNavigationOpen(false);

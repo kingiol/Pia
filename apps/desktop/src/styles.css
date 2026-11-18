@@ -54,6 +54,10 @@ input[type="file"]::file-selector-button { border: 0; border-radius: 2px; backgr
 svg { flex-shrink: 0; }
 
 .shell { display: flex; height: 100dvh; min-height: 0; overflow: hidden; }
+.shell--macos { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 40px minmax(0, 1fr); }
+.window-drag-region { background: var(--canvas); }
+.window-drag-region--sidebar { background: var(--surface-alt); border-right: 1px solid var(--line); }
+.shell--macos > :is(.sidebar, .main) { padding-top: 12px; }
 .sidebar {
   display: flex;
   flex-direction: column;

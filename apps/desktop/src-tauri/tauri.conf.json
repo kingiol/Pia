@@ -17,11 +17,25 @@
         "height": 920,
         "minWidth": 1120,
         "minHeight": 720,
-        "resizable": true
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 24, "y": 22 }
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://localhost:* http://127.0.0.1:* http://[::1]:* https:"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://localhost:* http://127.0.0.1:* http://[::1]:* https:",
+      "capabilities": [
+        {
+          "identifier": "macos-titlebar",
+          "platforms": ["macOS"],
+          "windows": ["main"],
+          "permissions": [
+            "core:window:allow-start-dragging",
+            "core:window:allow-internal-toggle-maximize"
+          ]
+        }
+      ]
     }
   },
   "plugins": {
