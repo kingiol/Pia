@@ -8,6 +8,7 @@ datas = [
     (str(ROOT / "migrations"), "resources/migrations"),
     (str(ROOT / "rules"), "resources/rules"),
     (str(ROOT / "config" / "strategies"), "resources/config/strategies"),
+    (str(ROOT / "contracts" / "schemas"), "resources/contracts/schemas"),
     (str(ROOT / "tests" / "fixtures"), "resources/tests/fixtures"),
 ]
 binaries = []

@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
+
+from .config import ROOT
 
 
 class SchemaValidationError(ValueError):
     """Raised when an API payload does not satisfy its JSON Schema."""
 
 
-ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_ROOT = ROOT / "contracts" / "schemas"
 
 
 def load_schema(name: str) -> dict[str, Any]:
-    return json.loads((SCHEMA_ROOT / f"{name}.json").read_text())
+    return json.loads((SCHEMA_ROOT / f"{name}.json").read_text(encoding="utf-8"))
 
 
 def validate_schema(payload: Any, schema: dict[str, Any], path: str = "$") -> None:
