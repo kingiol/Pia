@@ -117,7 +117,7 @@ def build_report() -> dict[str, Any]:
         },
     }
     client_ok, client_detail = _check_command(
-        [str(ROOT / "scripts" / "python.sh"), "scripts/generate_ts_client.py", "--check"]
+        [sys.executable, "scripts/generate_ts_client.py", "--check"]
     )
     checks["generated_client"] = {
         "status": "pass" if client_ok else "failed",

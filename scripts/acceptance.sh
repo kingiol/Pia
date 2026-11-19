@@ -80,8 +80,12 @@ PIA_DUCKDB_PATH="$root_tmp/replay.duckdb" \
 PIA_DATA_PROVIDER=fixture \
   ./scripts/replay.sh >/dev/null
 pnpm run build:web >/dev/null
-echo "-- Desktop GUI smoke"
-./scripts/desktop-ui-smoke.sh
+if [ "${PIA_DESKTOP_UI_SMOKE:-1}" = "1" ]; then
+  echo "-- Desktop GUI smoke"
+  ./scripts/desktop-ui-smoke.sh
+else
+  echo "DESKTOP UI SMOKE SKIP (requires the workstation Playwright wrapper)"
+fi
 
 echo "-- Web, iOS and Android client acceptance"
 ./scripts/mobile-acceptance.sh

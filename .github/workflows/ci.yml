@@ -116,6 +116,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.platform == 'true'
     uses: ./.github/workflows/desktop.yml
+    with:
+      package-desktop: true
 
   android:
     needs: changes

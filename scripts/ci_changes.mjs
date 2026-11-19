@@ -8,15 +8,16 @@ export function classifyChanges(paths) {
   const enable = (...names) => names.forEach((name) => { result[name] = true; });
   for (const path of paths) {
     if (/^(docs\/.*\.(md|png|jpe?g|webp|svg)|[^/]+\.md)$/.test(path)) enable("docs");
-    else if (/^(contracts\/|packages\/contracts\/|scripts\/generate_)/.test(path)) enable("contracts", "runtime", "web", "desktop");
+    else if (/^(contracts\/|packages\/contracts\/|scripts\/generate_)/.test(path)) enable("contracts", "runtime", "web", "desktop", "platform");
     else if (/^(apps\/desktop\/src\/|apps\/web\/)/.test(path)) enable("web", "desktop");
-    else if (/^(apps\/desktop\/src-tauri\/|sidecar|scripts\/(build-sidecar|desktop-|windows-))/.test(path)) enable("runtime", "web", "desktop", "platform");
+    else if (/^(apps\/desktop\/src-tauri\/|sidecar|scripts\/(build-sidecar|desktop-|windows-|native-notification-smoke|release-manifest|release_manifest))/.test(path)) enable("runtime", "web", "desktop", "platform");
     else if (/^apps\/android\//.test(path)) enable("android");
     else if (/^apps\/ios\//.test(path)) enable("ios");
-    else if (/^(pyproject\.toml$|packages-py\/pia_runtime\/pia_runtime\/(cli|config|isolated_call)\.py$)/.test(path)) enable("runtime", "platform");
-    else if (/^(packages-py\/|pyproject\.toml$|migrations\/|rules\/|config\/)/.test(path)) enable("runtime");
+    else if (/^(packages-py\/|pyproject\.toml$|migrations\/|rules\/|config\/strategies\/)/.test(path)) enable("runtime", "platform");
+    else if (/^config\//.test(path)) enable("runtime");
+    else if (/^tests\/fixtures\//.test(path)) enable("runtime", "contracts", "platform");
     else if (/^tests\//.test(path)) enable("runtime", "contracts");
-    else if (/^(package\.json|pnpm-lock\.yaml)$/.test(path)) enable("contracts", "web", "desktop");
+    else if (/^(package\.json|pnpm-lock\.yaml)$/.test(path)) enable("contracts", "web", "desktop", "platform");
     else enable(...surfaces);
   }
   if (!paths.length) enable("docs");

@@ -275,12 +275,14 @@ is surfaced as failed instead of being replayed into duplicate text.
 
    没有显式日期或 lookback 设置时会返回跳过状态，不会访问外部 Provider。
 
-真实凭据验收可在 macOS GitHub Actions runner 上手动执行
-`.github/workflows/release-gates.yml`。该 workflow 只在仓库 Secret 提供
-`DEEPSEEK_API_KEY` 时运行，并将可选的 `TUSHARE_TOKEN` 注入 release
-acceptance；它会执行真实 DeepSeek structured/stream/tool-call、AKShare
-freshness、Tushare fallback（如配置）和完整 Local/Cloud acceptance。没有
-Secret 时 job 会被跳过，不会把本地 contract test 当成真实发布证据。
+手动运行 `.github/workflows/release-gates.yml` 时，填写一个已收盘的交易日和
+要检查的交易日列表，并通过 `live-release` Environment 提供验收凭据。
+macOS job 验证 DeepSeek structured/stream/tool-call 和 AKShare freshness，
+并按凭据配置验证 Tushare fallback 和外部推送。缺少 `DEEPSEEK_API_KEY` 时
+验收失败。Windows job 在 MSI 打包和验收后执行发布预检，上传
+`pia-release-preflight` 报告。当前 MVP 预检同时要求 `TUSHARE_TOKEN`。
+macOS job 的 Actions 摘要列出实际报告为跳过的检查，包括依赖工作站
+Playwright 脚本的 GUI smoke。工作站仍可用 `./scripts/acceptance.sh` 运行该检查。
 `.github/workflows/provider-freshness.yml` 会在工作日定期运行最近五个
 Provider 开市日的 freshness gate，也支持手动选择 AKShare 或 Tushare。
 5. 发布候选版本。

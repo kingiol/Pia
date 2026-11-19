@@ -31,6 +31,30 @@ test("unknown paths and workflows conservatively run everything", () => {
   assert.ok(rename.desktop && rename.web && rename.android);
 });
 
+test("desktop packaging follows the files included in the bundle and its build", () => {
+  const inputs = [
+    "apps/desktop/src-tauri/icons/icon.ico",
+    "sidecar.spec",
+    "sidecar_entry.py",
+    "scripts/build-sidecar.ps1",
+    "scripts/windows-acceptance.ps1",
+    "scripts/native-notification-smoke.ps1",
+    "packages-py/pia_runtime/pia_runtime/schema.py",
+    "contracts/schemas/device.json",
+    "migrations/001_initial.sql",
+    "rules/baseline.yaml",
+    "config/strategies/example.json",
+    "tests/fixtures/market/close-2026-11-05.json",
+    "pnpm-lock.yaml",
+  ];
+  for (const path of inputs) {
+    assert.equal(classifyChanges([path]).platform, true, path);
+  }
+  for (const path of ["README.md", "apps/web/index.html", "apps/android/gradle.properties", "tests/test_runtime.py"]) {
+    assert.equal(classifyChanges([path]).platform, false, path);
+  }
+});
+
 test("aggregate rejects every unexpected job outcome", () => {
   const changes = classifyChanges(["README.md"]);
   const jobs = Object.fromEntries(surfaces.map((name) => [name, changes[name] ? "success" : "skipped"]));
@@ -40,4 +64,13 @@ test("aggregate rejects every unexpected job outcome", () => {
     assert.equal(requiredGate(changes, { ...jobs, docs: status }), false);
   }
   assert.equal(requiredGate(changes, { ...jobs, changes: "failure" }), false);
+});
+
+test("aggregate requires successful packaging when a bundled file changes", () => {
+  const changes = classifyChanges(["sidecar.spec"]);
+  const jobs = Object.fromEntries(surfaces.map((name) => [name, changes[name] ? "success" : "skipped"]));
+  jobs.changes = "success";
+  assert.equal(requiredGate(changes, jobs), true);
+  assert.equal(requiredGate(changes, { ...jobs, platform: "skipped" }), false);
+  assert.equal(requiredGate(changes, { ...jobs, platform: "failure" }), false);
 });

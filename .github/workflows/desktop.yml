@@ -2,13 +2,18 @@ name: desktop
 
 on:
   workflow_call:
+    inputs:
+      package-desktop:
+        description: Run the macOS and Windows package builds and acceptance checks
+        type: boolean
+        default: false
   workflow_dispatch:
   push:
   pull_request:
 
 jobs:
   contracts-and-runtime:
-    if: github.event_name != 'workflow_call'
+    if: ${{ !inputs.package-desktop }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +43,7 @@ jobs:
         run: python scripts/check_docs.py
 
   tauri:
-    if: github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch'
+    if: inputs.package-desktop || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +137,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ !inputs.package-desktop && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
