@@ -43,7 +43,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             shell: bash
           - os: windows-latest
             shell: pwsh
