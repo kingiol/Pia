@@ -758,7 +758,7 @@ private struct TaskDetailView: View {
         }
     }
 
-    private func performControl<T>(_ operation: @escaping () async throws -> T) {
+    private func performControl<T: Sendable>(_ operation: @escaping () async throws -> T) {
         guard !busy, !loading, actionsVerified else { return }
         busy = true
         errorMessage = nil
