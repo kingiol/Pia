@@ -1272,10 +1272,10 @@ class AkshareMarketProvider:
         listing_metadata = self._get_listing_metadata()
         result: dict[str, dict[str, Any]] = {}
         for row in rows:
-            code = str(row.get("代码") or row.get("证券代码") or "").strip()
+            code = str(row.get("代码") or row.get("证券代码") or row.get("code") or "").strip()
             if not code:
                 continue
-            name = str(row.get("名称") or row.get("股票简称") or code)
+            name = str(row.get("名称") or row.get("股票简称") or row.get("name") or code)
             symbol = _canonical_symbol(code)
             metadata = listing_metadata.get(code, {})
             listed_at = (

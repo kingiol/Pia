@@ -382,7 +382,7 @@ class AdapterContractTest(unittest.TestCase):
 
             @staticmethod
             def stock_info_a_code_name():
-                return Frame([])
+                return Frame([{"code": "600000", "name": "浦发银行"}])
 
             @staticmethod
             def fund_etf_spot_em():
@@ -407,6 +407,7 @@ class AdapterContractTest(unittest.TestCase):
             rows = provider.get_universe()
 
         by_symbol = {row["symbol"]: row for row in rows}
+        self.assertEqual(by_symbol["600000.SH"]["name"], "浦发银行")
         self.assertEqual(by_symbol["510300.SH"]["listed_at"], "2012-05-28")
         self.assertEqual(by_symbol["510300.SH"]["exchange"], "SSE")
         self.assertEqual(by_symbol["159001.SZ"]["listed_at"], "2013-01-09")
