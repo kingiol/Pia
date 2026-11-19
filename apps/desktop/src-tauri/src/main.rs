@@ -9,6 +9,15 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
+#[cfg(windows)]
+mod windows_job;
+
+struct RuntimeChild {
+    process: Child,
+    #[cfg(windows)]
+    job: std::os::windows::io::OwnedHandle,
+}
+
 fn runtime_root() -> PathBuf {
     if let Ok(root) = env::var("PIA_RUNTIME_ROOT") {
         return PathBuf::from(root);
@@ -46,77 +55,83 @@ fn packaged_sidecar() -> Option<PathBuf> {
     bundled.exists().then_some(bundled)
 }
 
-fn spawn_runtime() -> std::io::Result<Child> {
+fn spawn_runtime() -> std::io::Result<RuntimeChild> {
     let data_provider = env::var("PIA_DATA_PROVIDER").unwrap_or_else(|_| "akshare".to_string());
-    if let Some(sidecar) = packaged_sidecar() {
+    let mut command = if let Some(sidecar) = packaged_sidecar() {
         let mut command = Command::new(sidecar);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        return command
-            .args(["serve", "--scheduler"])
-            .env("PIA_DATA_PROVIDER", data_provider)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn();
-    }
-    let root = runtime_root();
-    let python = env::var("PIA_PYTHON").unwrap_or_else(|_| {
-        if cfg!(target_os = "windows") { "python".to_string() } else { "python3".to_string() }
-    });
-    let mut command = Command::new(python);
+        command.args(["serve", "--scheduler"]);
+        command
+    } else {
+        let root = runtime_root();
+        let python = env::var("PIA_PYTHON").unwrap_or_else(|_| {
+            if cfg!(target_os = "windows") {
+                "python".to_string()
+            } else {
+                "python3".to_string()
+            }
+        });
+        let mut command = Command::new(python);
+        command
+            .args(["-m", "pia_runtime.cli", "serve", "--scheduler"])
+            .current_dir(&root)
+            .env("PYTHONPATH", root.join("packages-py/pia_runtime"));
+        command
+    };
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
+    #[cfg(windows)]
+    let job = windows_job::create()?;
     command
-        .args(["-m", "pia_runtime.cli", "serve", "--scheduler"])
-        .current_dir(&root)
-        .env("PYTHONPATH", root.join("packages-py/pia_runtime"))
         .env("PIA_DATA_PROVIDER", data_provider)
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
+        .stderr(Stdio::inherit());
+    let process = command.spawn()?;
+    #[cfg(windows)]
+    let process = windows_job::attach(&job, process)?;
+    Ok(RuntimeChild {
+        process,
+        #[cfg(windows)]
+        job,
+    })
 }
 
-fn stop_runtime(runtime: &Arc<Mutex<Option<Child>>>) {
-    if let Some(mut child) = runtime.lock().expect("runtime mutex poisoned").take() {
-        let pid = child.id();
+fn stop_runtime(runtime: &Arc<Mutex<Option<RuntimeChild>>>) {
+    if let Some(child) = runtime.lock().expect("runtime mutex poisoned").take() {
+        let mut process = child.process;
         #[cfg(unix)]
         unsafe {
-            let _ = libc::killpg(pid as i32, libc::SIGTERM);
+            let _ = libc::killpg(process.id() as i32, libc::SIGTERM);
         }
         #[cfg(windows)]
-        {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .status();
-        }
-        let _ = child.kill();
-        let _ = child.wait();
+        drop(child.job);
+        let _ = process.kill();
+        let _ = process.wait();
     }
 }
 
 #[tauri::command]
-fn ensure_local_runtime(runtime: tauri::State<'_, Arc<Mutex<Option<Child>>>>) -> Result<(), String> {
+fn ensure_local_runtime(
+    runtime: tauri::State<'_, Arc<Mutex<Option<RuntimeChild>>>>,
+) -> Result<(), String> {
     if env::var("PIA_MANAGED_RUNTIME").as_deref() == Ok("0") {
         return Ok(());
     }
     let mut child = runtime.lock().map_err(|error| error.to_string())?;
-    if let Some(process) = child.as_mut() {
-        if process.try_wait().map_err(|error| error.to_string())?.is_none() {
+    if let Some(runtime) = child.as_mut() {
+        if runtime.process.try_wait().map_err(|error| error.to_string())?.is_none() {
             return Ok(());
         }
     }
+    drop(child.take());
     *child = Some(spawn_runtime().map_err(|error| error.to_string())?);
     Ok(())
 }
 
 fn main() {
-    let runtime: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+    let runtime: Arc<Mutex<Option<RuntimeChild>>> = Arc::new(Mutex::new(None));
     let runtime_for_exit = Arc::clone(&runtime);
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
