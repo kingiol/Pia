@@ -52,6 +52,7 @@ $env:PIA_PORT = "$port"
 $env:PIA_DB_PATH = Join-Path $tempRoot "pia.sqlite3"
 $env:PIA_DUCKDB_PATH = Join-Path $tempRoot "pia.duckdb"
 $env:PIA_AUTOSTART_TASKS = "1"
+$env:PIA_DATA_PROVIDER = "fixture"
 
 $process = $null
 try {
@@ -104,10 +105,11 @@ try {
     Start-Sleep -Milliseconds 250
   }
   if (-not $detail -or $terminal -notcontains $detail.task.status) {
-    throw "Packaged task did not reach a terminal acceptance state."
+    throw "Packaged task did not reach a terminal acceptance state. Status: $($detail.task.status)"
   }
   if (-not $detail.evidence -or $detail.evidence.Count -lt 3) {
-    throw "Packaged task did not persist the expected evidence set."
+    $taskError = $detail.task.error | ConvertTo-Json -Compress
+    throw "Packaged task did not persist the expected evidence set. Status: $($detail.task.status). Error: $taskError"
   }
   Write-Output "TASK E2E PASS $taskId"
 
@@ -127,7 +129,8 @@ try {
   Write-Output "DEVICE LIFECYCLE PASS"
 } finally {
   if ($process -and -not $process.HasExited) {
-    Stop-Process -Id $process.Id -Force
+    & taskkill /PID $process.Id /T /F | Out-Null
+    $process.WaitForExit(10000) | Out-Null
   }
   Remove-Item -Recurse -Force $tempRoot -ErrorAction SilentlyContinue
 }

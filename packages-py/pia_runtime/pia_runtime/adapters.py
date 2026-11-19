@@ -343,7 +343,7 @@ class FixtureMarketProvider:
         path = _safe_fixture_path(self.fixture_dir / "market", name, "market")
         if not path.exists():
             raise FileNotFoundError(f"market fixture not found: {path}")
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def get_market_breadth(
         self,
@@ -373,7 +373,7 @@ class FixtureMarketProvider:
         }
         grouped: dict[str, dict[str, Any]] = {}
         for path in sorted((self.fixture_dir / "market").glob("*.json")):
-            payload = json.loads(path.read_text())
+            payload = json.loads(path.read_text(encoding="utf-8"))
             trade_date = str(payload.get("as_of") or "")[:10]
             if not (start_date <= trade_date <= end_date):
                 continue
@@ -430,7 +430,7 @@ class FixtureMarketProvider:
         path = _safe_fixture_path(self.fixture_dir / "portfolio", fixture_name, "portfolio")
         if not path.exists():
             raise FileNotFoundError(f"portfolio fixture not found: {path}")
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def get_trading_calendar(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
         start = datetime.fromisoformat(start_date)
@@ -448,7 +448,7 @@ class FixtureMarketProvider:
     def get_universe(self) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for path in sorted((self.fixture_dir / "market").glob("*.json")):
-            payload = json.loads(path.read_text())
+            payload = json.loads(path.read_text(encoding="utf-8"))
             rows.extend(payload.get("instruments", []))
         deduped: dict[str, dict[str, Any]] = {}
         for row in rows:
@@ -477,7 +477,7 @@ class FixtureMarketProvider:
 
     def get_daily_bars(self, symbol: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
         for path in sorted((self.fixture_dir / "market").glob("*.json")):
-            payload = json.loads(path.read_text())
+            payload = json.loads(path.read_text(encoding="utf-8"))
             if not (start_date <= str(payload.get("as_of", "")) <= end_date):
                 continue
             for instrument in payload.get("instruments", []):

@@ -1510,7 +1510,7 @@ class PiaRuntime:
                 "news": [],
                 "filings": [],
             }
-        payload = json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
         payload.setdefault(
             "fundamentals",
             {

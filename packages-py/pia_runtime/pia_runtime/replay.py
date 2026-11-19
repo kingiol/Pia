@@ -8,7 +8,7 @@ from .runtime import PiaRuntime
 
 
 def run_replay(runtime: PiaRuntime, fixture_path: Path) -> dict[str, Any]:
-    payload = json.loads(fixture_path.read_text())
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
     task_input = payload["task_input"]
     task = runtime.create_task(
         task_input["trigger_type"],
