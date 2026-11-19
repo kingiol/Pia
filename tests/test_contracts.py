@@ -195,7 +195,7 @@ class ContractTest(unittest.TestCase):
         self.assertIn('key === "p"', source)
         self.assertIn('event.key === "Enter"', source)
         self.assertIn('data-shortcut="new-review"', source)
-        self.assertIn('aria-label="Search tasks or symbols"', source)
+        self.assertIn('aria-label="搜索研究或股票代码"', source)
         self.assertIn("visibleTasks", source)
         for chart in ("市场宽度", "指数趋势", "持仓暴露", "回撤", "Agent 时间线"):
             self.assertIn(f'<ChartFrame title="{chart}"', source)
