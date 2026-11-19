@@ -1,7 +1,7 @@
 import importlib.util
 import tempfile
 import unittest
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -40,10 +40,31 @@ class ProviderFreshnessTest(unittest.TestCase):
             Provider(),
             [],
             3,
-            today=date(2026, 11, 6),
+            now=datetime(2026, 11, 6, 9, tzinfo=timezone.utc),
         )
         self.assertEqual(dates, ["2026-11-03", "2026-11-04", "2026-11-06"])
         self.assertEqual(source, "provider_calendar")
+
+    def test_lookback_excludes_today_until_shanghai_market_close(self):
+        class Provider:
+            def get_trading_calendar(self, start_date, end_date):
+                return [
+                    {"trade_date": "2026-11-18", "is_open": True},
+                    {"trade_date": "2026-11-19", "is_open": True},
+                ]
+
+        cases = {
+            "2026-11-18T18:15:00+00:00": "2026-11-18",
+            "2026-11-19T07:04:59+00:00": "2026-11-18",
+            "2026-11-19T07:05:00+00:00": "2026-11-19",
+        }
+        with patch.dict(MODULE.os.environ, {"PIA_MARKET_CLOSE_TIME": "15:05"}):
+            for timestamp, expected in cases.items():
+                with self.subTest(timestamp=timestamp):
+                    dates, _ = MODULE.resolve_freshness_dates(
+                        Provider(), [], 1, now=datetime.fromisoformat(timestamp),
+                    )
+                    self.assertEqual(dates, [expected])
 
     def test_resolve_freshness_dates_requires_enough_open_dates(self):
         class Provider:
@@ -55,7 +76,7 @@ class ProviderFreshnessTest(unittest.TestCase):
                 Provider(),
                 [],
                 2,
-                today=date(2026, 11, 6),
+                now=datetime(2026, 11, 6, 9, tzinfo=timezone.utc),
             )
 
     def test_run_freshness_passes_only_verified_dates(self):
@@ -115,3 +136,23 @@ class ProviderFreshnessTest(unittest.TestCase):
                 )
         self.assertFalse(report["passed"])
         self.assertEqual(report["failed_dates"], ["2026-11-06"])
+
+    def test_run_freshness_stops_after_provider_rate_limit(self):
+        provider = type("Provider", (), {"provider_id": "akshare"})()
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(MODULE, "DataWorker") as worker:
+                sync = worker.return_value.sync_market_data
+                sync.return_value = {
+                    "quality": "partial",
+                    "failures": [{"code": "Push2RateLimitError"}],
+                }
+                report = MODULE.run_freshness(
+                    provider,
+                    ["2026-11-05", "2026-11-06"],
+                    ["600000.SH"],
+                    Path(directory) / "freshness.duckdb",
+                )
+        sync.assert_called_once_with("2026-11-05", ["600000.SH"])
+        self.assertFalse(report["passed"])
+        self.assertEqual(report["failed_dates"], ["2026-11-05"])
+        self.assertEqual(report["unchecked_dates"], ["2026-11-06"])

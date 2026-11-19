@@ -555,25 +555,17 @@ class AkshareMarketProvider:
         code = symbol.split(".")[0]
         if _board_for_symbol(symbol) == "etf":
             method = getattr(self.sdk, "fund_etf_hist_em", None)
-            if method is None:
-                raise RuntimeError(
-                    "CAPABILITY_DISABLED: AKShare ETF historical endpoint unavailable"
-                )
-            frame = method(
-                symbol=code,
-                period="daily",
-                start_date=start_date.replace("-", ""),
-                end_date=end_date.replace("-", ""),
-                adjust="",
-            )
         else:
-            frame = self.sdk.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=start_date.replace("-", ""),
-                end_date=end_date.replace("-", ""),
-                adjust="",
-            )
+            method = self._stock_history_endpoint()
+        if method is None:
+            raise RuntimeError(f"CAPABILITY_DISABLED: AKShare historical endpoint unavailable for {symbol}")
+        frame = method(
+            symbol=code,
+            period="daily",
+            start_date=start_date.replace("-", ""),
+            end_date=end_date.replace("-", ""),
+            adjust="",
+        )
         rows = _records(frame)
         for row in rows:
             row.setdefault("symbol", symbol)
@@ -621,7 +613,7 @@ class AkshareMarketProvider:
         self._require_sdk()
         if (
             as_of != datetime.now(timezone.utc).date().isoformat()
-            and getattr(self.sdk, "stock_zh_a_hist", None) is not None
+            and self._stock_history_endpoint() is not None
             and not self._is_latest_open_date(as_of)
         ):
             return self._get_historical_market_snapshot(as_of)
@@ -775,14 +767,18 @@ class AkshareMarketProvider:
             min(16, int(os.environ.get("PIA_AKSHARE_HISTORICAL_WORKERS", "8"))),
         )
         bars: dict[str, dict[str, Any]] = {}
+        rate_limited = threading.Event()
 
         def fetch(row: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
             symbol = str(row.get("symbol") or "").strip().upper()
-            if not symbol:
+            if not symbol or rate_limited.is_set():
                 return "", None
             try:
                 return symbol, self._historical_bar(symbol, as_of)
-            except Exception:
+            except Exception as error:
+                if type(error).__name__ == "Push2RateLimitError":
+                    rate_limited.set()
+                    raise
                 return symbol, None
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -863,6 +859,9 @@ class AkshareMarketProvider:
             "daily_bars": list(bars.values()),
         }
 
+    def _stock_history_endpoint(self) -> Any:
+        return getattr(self.sdk, "stock_zh_a_hist_em", None) or getattr(self.sdk, "stock_zh_a_hist", None)
+
     def _historical_bar(
         self,
         symbol: str,
@@ -879,26 +878,17 @@ class AkshareMarketProvider:
         end_date = datetime.now(timezone.utc).date().strftime("%Y%m%d")
         if _board_for_symbol(symbol) == "etf":
             method = getattr(self.sdk, "fund_etf_hist_em", None)
-            if method is None:
-                return None
-            frame = method(
-                symbol=code,
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="",
-            )
         else:
-            method = getattr(self.sdk, "stock_zh_a_hist", None)
-            if method is None:
-                return None
-            frame = method(
-                symbol=code,
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="",
-            )
+            method = self._stock_history_endpoint()
+        if method is None:
+            return None
+        frame = method(
+            symbol=code,
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
+        )
         rows = _records(frame)
         normalized = normalize_daily_bars(
             rows,

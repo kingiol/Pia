@@ -11,15 +11,9 @@ let package = Package(
         .library(name: "PiaMobileClient", targets: ["PiaMobileClient"]),
         .executable(name: "PiaApp", targets: ["PiaApp"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/phosphor-icons/swift", from: "2.1.0"),
-    ],
     targets: [
         .target(name: "PiaMobileClient"),
-        .executableTarget(name: "PiaApp", dependencies: [
-            "PiaMobileClient",
-            .product(name: "PhosphorSwift", package: "swift"),
-        ]),
+        .executableTarget(name: "PiaApp", dependencies: ["PiaMobileClient"]),
         .testTarget(name: "PiaMobileClientTests", dependencies: ["PiaMobileClient"]),
     ]
 )

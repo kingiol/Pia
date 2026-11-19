@@ -7,13 +7,14 @@ import argparse
 import json
 import os
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from pia_runtime.adapters import AkshareMarketProvider, TushareMarketProvider
 from pia_runtime.analytics import AnalyticsStore
+from pia_runtime.config import Settings
 from pia_runtime.credentials import configured_secret
 from pia_runtime.data_worker import DataWorker
 
@@ -32,8 +33,10 @@ def run_freshness(
     store = AnalyticsStore(database_path)
     results: list[dict[str, Any]] = []
     try:
+        worker = DataWorker(provider, store)
         for as_of in dates:
-            result = DataWorker(provider, store).sync_market_data(as_of, symbols)
+            result = worker.sync_market_data(as_of, symbols)
+            failures = result.get("failures", [])
             results.append({
                 "as_of": as_of,
                 "provider_id": result.get("provider_id"),
@@ -43,8 +46,10 @@ def run_freshness(
                     "field_completeness"
                 ),
                 "counts": result.get("counts", {}),
-                "failures": result.get("failures", []),
+                "failures": failures,
             })
+            if any(failure.get("code") == "Push2RateLimitError" for failure in failures):
+                break
     finally:
         store.close()
 
@@ -62,6 +67,7 @@ def run_freshness(
         "results": results,
         "passed": not failures,
         "failed_dates": [item["as_of"] for item in failures],
+        "unchecked_dates": dates[len(results):],
     }
 
 
@@ -70,24 +76,29 @@ def resolve_freshness_dates(
     requested_dates: list[str],
     lookback_days: int = 0,
     *,
-    today: date | None = None,
+    now: datetime | None = None,
 ) -> tuple[list[str], str]:
-    """Resolve explicit dates or the latest open dates from a provider calendar."""
+    """Resolve explicit dates or the latest completed trading sessions."""
     if requested_dates:
         return requested_dates, "explicit"
     if lookback_days <= 0:
         return [], "missing"
 
-    current_date = today or datetime.now(ZoneInfo("Asia/Shanghai")).date()
-    calendar_start = current_date - timedelta(days=max(lookback_days * 3, lookback_days + 10))
+    market_timezone = ZoneInfo("Asia/Shanghai")
+    local_now = now.astimezone(market_timezone) if now else datetime.now(market_timezone)
+    close_time = time.fromisoformat(os.getenv("PIA_MARKET_CLOSE_TIME", Settings().market_close_time))
+    last_completed_day = local_now.date()
+    if local_now.time() < close_time:
+        last_completed_day -= timedelta(days=1)
+    calendar_start = last_completed_day - timedelta(days=max(lookback_days * 3, lookback_days + 10))
     rows = provider.get_trading_calendar(
         calendar_start.isoformat(),
-        current_date.isoformat(),
+        last_completed_day.isoformat(),
     )
     open_dates = sorted({
         str(row.get("trade_date", ""))[:10]
         for row in rows
-        if row.get("is_open") and str(row.get("trade_date", ""))[:10] <= current_date.isoformat()
+        if row.get("is_open") and str(row.get("trade_date", ""))[:10] <= last_completed_day.isoformat()
     })
     dates = open_dates[-lookback_days:]
     if len(dates) < lookback_days:
@@ -127,7 +138,7 @@ def main() -> int:
         "--lookback-days",
         type=int,
         default=int(os.environ.get("PIA_FRESHNESS_LOOKBACK_DAYS", "0") or "0"),
-        help="resolve the latest N open dates from the provider calendar",
+        help="resolve the latest N completed trading dates from the provider calendar",
     )
     parser.add_argument(
         "--symbols",

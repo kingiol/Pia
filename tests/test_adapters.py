@@ -510,7 +510,7 @@ class AdapterContractTest(unittest.TestCase):
             __version__ = "fake-akshare"
 
             @staticmethod
-            def stock_zh_a_hist(symbol, period, start_date, end_date, adjust):
+            def stock_zh_a_hist_em(symbol, period, start_date, end_date, adjust):
                 return Frame([
                     {
                         "日期": "2026-11-04",
@@ -599,6 +599,9 @@ class AdapterContractTest(unittest.TestCase):
         ]
 
         snapshot = provider.get_market_snapshot("2026-11-05")
+        bars = provider.get_daily_bars("600000.SH", "2026-11-04", "2026-11-05")
+        self.assertEqual(bars[-1]["trade_date"], "2026-11-05")
+        self.assertEqual(bars[-1]["close"], 10.4)
 
         self.assertEqual(snapshot["point_in_time_scope"], "historical")
         self.assertEqual(snapshot["quality"], "verified")

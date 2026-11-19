@@ -1,6 +1,5 @@
 import Foundation
 import PiaMobileClient
-import PhosphorSwift
 import SwiftUI
 
 #if os(iOS)
@@ -70,29 +69,6 @@ private enum PiaPalette {
         scheme == .dark
             ? Color(red: 1, green: 180.0 / 255, blue: 171.0 / 255)
             : Color(red: 179.0 / 255, green: 38.0 / 255, blue: 30.0 / 255)
-    }
-}
-
-@MainActor
-private enum PiaTabIcons {
-    static let today = makeImage(.sun)
-    static let research = makeImage(.chartLine)
-    static let alerts = makeImage(.bell)
-
-    private static func makeImage(_ icon: Ph) -> Image {
-        // Tab bars use the underlying image size and ignore SwiftUI frame modifiers.
-        let renderer = ImageRenderer(content: icon.regular.frame(width: 20, height: 20))
-        renderer.scale = 3
-        #if os(iOS)
-        if let image = renderer.uiImage {
-            return Image(uiImage: image).renderingMode(.template)
-        }
-        #else
-        if let image = renderer.nsImage {
-            return Image(nsImage: image).renderingMode(.template)
-        }
-        #endif
-        return icon.regular
     }
 }
 
@@ -250,21 +226,21 @@ struct ContentView: View {
                     .navigationTitle("Pia · 今天")
                     .toolbar { refreshToolbar }
             }
-                .tabItem { Label { Text("今天") } icon: { PiaTabIcons.today } }
+                .tabItem { Label("今天", systemImage: "sun.max") }
                 .tag(0)
             NavigationStack {
                 researchTab
                     .navigationTitle("Pia · 研究")
                     .toolbar { refreshToolbar }
             }
-                .tabItem { Label { Text("研究") } icon: { PiaTabIcons.research } }
+                .tabItem { Label("研究", systemImage: "chart.line.uptrend.xyaxis") }
                 .tag(1)
             NavigationStack {
                 alertsTab
                     .navigationTitle("Pia · 通知")
                     .toolbar { refreshToolbar }
             }
-                .tabItem { Label { Text("通知") } icon: { PiaTabIcons.alerts } }
+                .tabItem { Label("通知", systemImage: "bell") }
                 .tag(2)
         }
     }
@@ -296,7 +272,7 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 8) {
                     if creatingReview { ProgressView().controlSize(.small) }
-                    else { Ph.plusCircle.regular.frame(width: 20, height: 20).accessibilityHidden(true) }
+                    else { Image(systemName: "plus.circle").frame(width: 20, height: 20).accessibilityHidden(true) }
                     Text(creatingReview ? "正在创建复盘" : (tasks.isEmpty ? "开始第一次复盘" : "开始今日复盘"))
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -316,7 +292,7 @@ struct ContentView: View {
                     Task { await createReview() }
                 } label: {
                     Label { Text(creatingReview ? "正在创建复盘" : "开始今日复盘") } icon: {
-                        Ph.plusCircle.regular.frame(width: 20, height: 20)
+                        Image(systemName: "plus.circle").frame(width: 20, height: 20)
                     }
                 }
                 .disabled(creatingReview || refreshing)
@@ -410,7 +386,7 @@ struct ContentView: View {
             Button {
                 Task { await refresh() }
             } label: {
-                Ph.arrowClockwise.regular
+                Image(systemName: "arrow.clockwise")
                     .frame(width: 20, height: 20)
                     .frame(minWidth: 44, minHeight: 44)
             }
@@ -699,7 +675,7 @@ private struct TaskDetailView: View {
                 Button {
                     Task { await load() }
                 } label: {
-                    Ph.arrowClockwise.regular.frame(width: 20, height: 20).frame(minWidth: 44, minHeight: 44)
+                    Image(systemName: "arrow.clockwise").frame(width: 20, height: 20).frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel("刷新")
                 .help("刷新")
