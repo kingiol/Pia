@@ -17,6 +17,7 @@ Pia 文档导航。文档分为产品规格、当前实现说明、拟实施计�
 | 文档 | 内容与使用场景 |
 |---|---|
 | [PRD](PRD.md) | 产品目标、用户、范围、需求与成功指标 |
+| [Competitive Analysis](COMPETITIVE_ANALYSIS.md) | A 股投研与复盘产品比较、当前能力证据与试点假设 |
 | [Research Workspace](RESEARCH_WORKSPACE.md) | 研究工作台、任务、证据、规则和审批交互 |
 | [Design System](DESIGN_SYSTEM.md) | Desktop、Web、iOS、Android 的视觉与交互约定 |
 | [Decision Journal Design](DECISION_JOURNAL_DESIGN.md) | 决策日志、复盘与个人记忆的领域设计 |
