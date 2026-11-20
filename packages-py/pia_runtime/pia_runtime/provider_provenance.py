@@ -27,7 +27,9 @@ def routed_call(
     task_id = getattr(runtime._provider_context, "task_id", None)
     call_id = new_id("provider_call")
     attempts: list[dict[str, Any]] = []
-    chain = [runtime.fixture_provider] if runtime.settings.data_provider == "fixture" else runtime._provider_chain(capability)
+    requested_symbol = str(args[0] if args else kwargs.get("symbol", "")) if capability == "daily_bars" else ""
+    preferred = runtime._market_provider_preference(capability, requested_symbol)
+    chain = [runtime.fixture_provider] if runtime.settings.data_provider == "fixture" else runtime._provider_chain(capability, requested_symbol)
     if not runtime.settings.provider_fallback_enabled:
         chain = chain[:1]
     subject = str(args[0]) if args and "." in str(args[0]) else ""
@@ -49,7 +51,8 @@ def routed_call(
             budget.check()
         if type(provider) in {AkshareMarketProvider, TushareMarketProvider}:
             return isolated_call(
-                provider_leaf, (provider.provider_id, runtime.settings.tushare_token, method_name, args, kwargs),
+                provider_leaf, (provider.provider_id, getattr(provider, "token", None), method_name, args, kwargs),
+                {"daily_only": getattr(provider, "daily_only", False)},
                 timeout=budget.timeout() if budget else 45,
                 check=(lambda: runtime._check_timeout(budget.task)) if budget else None,
             )
@@ -115,7 +118,7 @@ def routed_call(
             result = attach_provenance(result, provider.provider_id, attempts)
             for row in [result] if isinstance(result, dict) else result if isinstance(result, list) else []:
                 if isinstance(row, dict):
-                    row["provenance"]["fallback_used"] |= provider.provider_id != runtime.settings.data_provider
+                    row["provenance"]["fallback_used"] |= provider.provider_id != preferred
             rows = [result] if isinstance(result, dict) else result if isinstance(result, list) else []
             cacheable = bool(rows) and all(
                 isinstance(row, dict) and row.get("quality") == "verified" and row.get("observed_at")

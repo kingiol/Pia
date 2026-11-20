@@ -2,10 +2,10 @@
 
 ## 1. First launch
 
-Pia opens with a four-step checklist:
+Pia opens with a five-step checklist:
 
 ```text
-投资方式 -> 持仓 -> 数据 -> 第一次收盘复盘
+投资方式 -> 持仓 -> 规则 -> 数据 -> 第一次收盘复盘
 ```
 
 Finish the highlighted next step before starting a review. The workspace shows
@@ -30,13 +30,18 @@ Open Profile and confirm:
 - enabled Ruleset version;
 - current portfolio and cash.
 
-Import portfolio data with CSV, XLSX or manual rows. The imported snapshot is
-versioned and remains available for replay.
+Import portfolio data with CSV, XLSX or manual rows. Set the business date the
+holdings describe. A new review uses the latest imported snapshot on or before
+its research date. The fixture walkthrough uses the demo date shown in the
+import form. In Rules, enter a single-stock position limit as a percentage to
+save a new version. Existing research keeps its original inputs and rules.
 
 ## 4. Run research
 
-Use a MarketClose event for a close review or enter a target symbol for stock
-research. Follow the task timeline:
+Start today's close review after the close or let the scheduler dispatch a
+MarketClose event. The manual review uses the current Shanghai date in live
+mode and the demo date in fixture mode. Open a stored task to replay the inputs
+from an earlier session. Follow the task timeline:
 
 ```text
 event -> data snapshot -> agents -> debate -> risk review -> decision
@@ -45,14 +50,13 @@ event -> data snapshot -> agents -> debate -> risk review -> decision
 Every conclusion must show its source, `as_of`, `observed_at`, quality and
 expiry state. A stale or unavailable snapshot blocks a new action.
 
-## 5. Review and approve
+## 5. Review and record the outcome
 
-Read the Rules and Risk Review panels before approving. `BLOCKED` and
-`NO_ACTION` tasks do not expose an approval action. A candidate action remains
-`WAITING_APPROVAL` until the user explicitly approves or rejects it.
-
-Approval records include the user, timestamp, Profile/Ruleset version and data
-snapshot. Pia has no broker write path in the pilot.
+Compare the market date and portfolio date in the research result, then open
+the applicable rule and evidence. A result awaiting review can be marked for
+watch, sent for further research, or dismissed. Use the retrospective form to
+record what you did, including why you took no action. Open the Decision
+Journal to find the record and replay the original research inputs.
 
 ## 6. Recover a failed task
 

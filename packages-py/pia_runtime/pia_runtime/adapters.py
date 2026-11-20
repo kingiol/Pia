@@ -153,6 +153,11 @@ class ProviderRegistry:
         self._runtime_state: dict[tuple[str, str, str], ProviderRuntimeState] = {}
         self._lock = threading.RLock()
 
+    def replace(self, provider: Any) -> None:
+        with self._lock:
+            self.providers = [provider if item.provider_id == provider.provider_id else item for item in self.providers]
+            self._runtime_state = {key: state for key, state in self._runtime_state.items() if key[0] != provider.provider_id}
+
     def health(self) -> list[dict[str, Any]]:
         result = []
         for provider in self.providers:
@@ -1630,11 +1635,12 @@ class AkshareMarketProvider:
 class TushareMarketProvider:
     provider_id = "tushare"
 
-    def __init__(self, token: str | None) -> None:
+    def __init__(self, token: str | None, *, daily_only: bool = False) -> None:
         self.token = token
+        self.daily_only = daily_only
         self.sdk = None
         self.client = None
-        if self.token and not self.token.startswith("__"):
+        if not self.daily_only and self.token and not self.token.startswith("__"):
             try:
                 import tushare as sdk  # type: ignore
                 self.sdk = sdk
@@ -1643,54 +1649,81 @@ class TushareMarketProvider:
                 self.sdk = None
 
     def health(self) -> ProviderHealth:
-        enabled = bool(self.token and not self.token.startswith("__"))
+        enabled = bool(self.token and not self.token.startswith("__") and (self.daily_only or self.client))
+        capabilities = ["daily_bars"] if self.daily_only else [
+            "market_snapshot", "daily_bars", "market_breadth", "index_series", "trading_calendar",
+            "fundamentals", "company_profile", "news", "filings", "universe",
+        ]
         return ProviderHealth(
             provider_id=self.provider_id,
-            status="healthy" if enabled and self.client else "capability_disabled",
-            capabilities=[
-                "market_snapshot",
-                "daily_bars",
-                "market_breadth",
-                "index_series",
-                "trading_calendar",
-                "fundamentals",
-                "company_profile",
-                "news",
-                "filings",
-                "universe",
-            ] if enabled and self.client else [],
+            status="healthy" if enabled else "capability_disabled",
+            capabilities=capabilities if enabled else [],
             supports_replay=True,
             requires_credentials=True,
         )
 
+    @staticmethod
+    def supports_free_daily(symbol: str) -> bool:
+        code, _, exchange = symbol.strip().upper().partition(".")
+        return len(code) == 6 and code.isascii() and code.isdigit() and (
+            (exchange == "SH" and code.startswith("6"))
+            or (exchange == "SZ" and code.startswith(("00", "30")))
+            or (exchange == "BJ" and code.startswith(("4", "8", "92")))
+        )
+
     def get_daily_bars(self, symbol: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
-        if not self.client:
+        if self.daily_only and not self.supports_free_daily(symbol):
+            raise ValueError("Tushare free daily supports A-share stocks only")
+        if self.daily_only:
+            symbol = symbol.strip().upper()
+        params = {"ts_code": symbol, "start_date": start_date.replace("-", ""), "end_date": end_date.replace("-", "")}
+        if self.daily_only:
+            rows = self._request_free_daily(params)
+        elif not self.client:
             raise RuntimeError("CAPABILITY_DISABLED: configure TUSHARE_TOKEN and install tushare")
-        if _board_for_symbol(symbol) == "etf":
+        elif _board_for_symbol(symbol) == "etf":
             method = getattr(self.client, "fund_daily", None)
             if method is None:
                 raise RuntimeError(
                     "CAPABILITY_DISABLED: Tushare ETF historical endpoint unavailable"
                 )
-            frame = method(
-                ts_code=symbol,
-                start_date=start_date.replace("-", ""),
-                end_date=end_date.replace("-", ""),
-            )
+            rows = _records(method(**params))
         else:
-            frame = self.client.daily(
-                ts_code=symbol,
-                start_date=start_date.replace("-", ""),
-                end_date=end_date.replace("-", ""),
-            )
-        rows = _records(frame)
+            rows = _records(self.client.daily(**params))
         for row in rows:
             row.setdefault("ts_code", symbol)
-        return normalize_daily_bars(
+            if row.get("trade_date"):
+                row["trade_date"] = date.fromisoformat(str(row["trade_date"])).isoformat()
+            if self.daily_only and row.get("amount") not in (None, ""):
+                # Tushare stock amounts are in thousands of yuan, unlike AKShare.
+                row["amount"] = float(row["amount"]) * 1000
+        bars = normalize_daily_bars(
             rows,
             provider_id=self.provider_id,
             provider_version=getattr(self.sdk, "__version__", "unknown"),
         )
+        if self.daily_only and not bars:
+            raise ValueError("Tushare returned no stock daily bars")
+        return bars
+
+    def _request_free_daily(self, params: dict[str, str]) -> list[dict[str, Any]]:
+        if not self.token or self.token.startswith("__"):
+            raise ValueError("CAPABILITY_DISABLED: configure TUSHARE_TOKEN")
+        request = urllib.request.Request(
+            "https://api.tushare.pro",
+            data=json.dumps({
+                "api_name": "daily", "token": self.token, "params": params,
+                "fields": "ts_code,trade_date,open,high,low,close,vol,amount",
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.load(response)
+        if payload.get("code") != 0:
+            raise ValueError("Tushare rejected the stock daily request")
+        data = payload["data"]
+        return [dict(zip(data["fields"], item, strict=True)) for item in data["items"]]
 
     def get_trading_calendar(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
         if not self.client:

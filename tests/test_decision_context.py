@@ -46,6 +46,38 @@ class DecisionContextTest(unittest.TestCase):
         self.assertEqual(context["context_source"], "frozen")
         self.assertEqual(context["confirmed_memories"], binding["payload"]["confirmed_memories"])
 
+    def test_close_review_uses_latest_compatible_import_and_ignores_later_market_pin(self):
+        runtime = self.runtime
+        rows = [{"symbol": "600000.SH", "quantity": 10, "avg_cost": 10, "market_value": 120}]
+        first = runtime.import_portfolio("manual", rows, as_of="2026-11-05")
+        matching = runtime.import_portfolio("manual", rows, as_of="2026-11-05")
+        later = runtime.import_portfolio("manual", rows, as_of="2026-11-06")
+        self.assertNotEqual(first["snapshot_id"], matching["snapshot_id"])
+        later_market = {
+            **runtime.fixture_provider.get_market_snapshot("2026-11-05"),
+            "snapshot_id": "later-market", "as_of": "2026-11-06",
+        }
+        runtime.db.save_market_snapshot(later_market)
+        task = runtime.create_task(target={
+            "as_of": "2026-11-05", "_market_snapshot_id": "later-market",
+            "_portfolio_snapshot_id": later["snapshot_id"],
+        })
+        self.complete(task)
+        pack = runtime.db.get_context_pack(task.id, "default")
+        self.assertEqual(pack["blocks"]["market"]["as_of"], "2026-11-05")
+        self.assertEqual(pack["blocks"]["portfolio"]["data"]["snapshot_id"], matching["snapshot_id"])
+
+    def test_later_import_cannot_be_used_by_an_earlier_review(self):
+        self.runtime.import_portfolio("manual", [
+            {"symbol": "600000.SH", "quantity": 10, "avg_cost": 10, "market_value": 120},
+        ], as_of="2026-11-06")
+        task = self.runtime.create_task(target={"as_of": "2026-11-05"})
+        self.runtime.run_task(task.id)
+        detail = self.runtime.wait_for_task(task.id)
+        self.assertEqual(detail["task"]["status"], "FAILED")
+        self.assertEqual(detail["task"]["error"]["code"], "PORTFOLIO_AS_OF_UNAVAILABLE")
+        self.assertIsNone(self.runtime.db.get_context_pack(task.id, "default"))
+
     def test_replay_is_offline_immutable_and_preserves_parent_evidence(self):
         runtime = self.runtime
         task = runtime.create_task(target={"as_of": "2026-11-05"})

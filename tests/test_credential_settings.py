@@ -55,9 +55,9 @@ class CredentialSettingsTest(unittest.TestCase):
         self.thread.join(5)
         self.assertFalse(self.thread.is_alive())
 
-    def request(self, method="GET", body=None, headers=None):
+    def request(self, method="GET", body=None, headers=None, *, path=None):
         request = urllib.request.Request(
-            self.url,
+            self.url if path is None else self.url.replace("/settings/deepseek", path),
             data=json.dumps(body).encode() if body is not None else None,
             method=method,
             headers={"Content-Type": "application/json", "Origin": "tauri://localhost",
@@ -97,6 +97,84 @@ class CredentialSettingsTest(unittest.TestCase):
             self.assertEqual(self.request("DELETE"), (200, {"configured": False, "source": "none"}))
             self.assertIsNone(self.runtime.deepseek.api_key)
             self.assertFalse(self.runtime.health()["llm"]["credentials_configured"])
+
+    def test_tushare_token_hot_reload_limits_local_requests_to_free_stock_daily(self):
+        path = "/settings/tushare"
+        stock = "600000.SH"
+        as_of = "2026-11-05"
+        calls = []
+        reject_daily = False
+
+        real_urlopen = urllib.request.urlopen
+
+        def open_request(request, *, timeout):
+            if request.full_url.startswith("http://127.0.0.1:"):
+                return real_urlopen(request, timeout=timeout)
+            self.assertEqual(request.full_url, "https://api.tushare.pro")
+            self.assertEqual(request.get_method(), "POST")
+            payload = json.loads(request.data)
+            self.assertEqual(payload["api_name"], "daily")
+            calls.append((payload["token"], payload["params"]))
+            if reject_daily:
+                return io.BytesIO(b'{"code":2002,"data":null}')
+            row = {"ts_code": stock, "trade_date": "20261105", "close": 12, "open": 11,
+                   "high": 12, "low": 11, "pre_close": 11, "vol": 100, "amount": 200}
+            return io.BytesIO(json.dumps({"code": 0, "data": {"fields": list(row), "items": [list(row.values())]}}).encode())
+
+        def invoke(leaf, args, kwargs=None, **_options):
+            if args[0] == "akshare":
+                if args[2] == "get_daily_bars":
+                    return self.runtime.fixture_provider.get_daily_bars(*args[3])
+                raise ConnectionError("fixture AKShare is unavailable")
+            return leaf(*args, **(kwargs or {}))
+
+        with patch.dict(os.environ, {"TUSHARE_TOKEN": "env-tushare-token"}), patch(
+            "pia_runtime.adapters.urllib.request.urlopen", side_effect=open_request,
+        ), patch("pia_runtime.isolated_call.isolated_call", side_effect=invoke):
+            self.assertEqual(self.request(path=path), (200, {"configured": True, "source": "environment"}))
+            self.assertEqual(self.request("POST", {"token": " saved-tushare-token "}, path=path),
+                             (200, {"configured": True, "source": "saved"}))
+            demo_provider, _ = self.runtime._provider_call("daily_bars", "get_daily_bars", stock, as_of, as_of)
+            self.assertEqual(demo_provider.provider_id, "fixture")
+            self.assertEqual(calls, [])
+            self.runtime.settings.data_provider = "akshare"
+            for capability, symbol in (("market_snapshot", ""), ("trading_calendar", ""),
+                                       ("daily_bars", "510300.SH"), ("daily_bars", "000001.SH")):
+                self.assertEqual([p.provider_id for p in self.runtime._provider_chain(capability, symbol)], ["akshare"])
+            synced = self.runtime.sync_market_data(as_of, [stock])
+            self.assertEqual(synced["market_snapshot_quality"], "unavailable")
+            self.assertEqual(synced["counts"]["daily_bars"], 1)
+            daily_attempt = next(attempt for attempt in synced["provider_attempts"] if attempt["capability"] == "daily_bars")
+            self.assertEqual((daily_attempt["provider_id"], daily_attempt["outcome"]), ("tushare", "success"))
+            self.assertEqual(calls, [("saved-tushare-token", {"ts_code": stock, "start_date": "20261105", "end_date": "20261105"})])
+            reject_daily = True
+            provider, bars = self.runtime._provider_call("daily_bars", "get_daily_bars", stock, as_of, as_of)
+            self.assertEqual(provider.provider_id, "akshare")
+            self.assertEqual([attempt["provider_id"] for attempt in bars[0]["provenance"]["attempts"]], ["tushare", "akshare"])
+            reject_daily = False
+            restarted = PiaRuntime(Settings(db_path=self.directory / "restart.sqlite3", data_provider="akshare"))
+            try:
+                self.assertEqual(restarted.settings.tushare_token, "saved-tushare-token")
+            finally:
+                restarted.close()
+            self.assertEqual(self.request("DELETE", path=path), (200, {"configured": True, "source": "environment"}))
+            _, bars = self.runtime._provider_call("daily_bars", "get_daily_bars", stock, as_of, as_of)
+            self.assertEqual(calls[-1][0], "env-tushare-token")
+            self.assertEqual((bars[0]["trade_date"], bars[0]["amount"]), (as_of, 200000.0))
+            with patch.dict(os.environ, {"TUSHARE_TOKEN": ""}):
+                self.assertEqual(self.request("DELETE", path=path), (200, {"configured": False, "source": "none"}))
+                self.assertNotIn("tushare", [p.provider_id for p in self.runtime._provider_chain("daily_bars", stock)])
+
+    def test_tushare_settings_reject_invalid_or_untrusted_requests_and_hide_tokens(self):
+        path = "/settings/tushare"
+        self.assertEqual(self.request("POST", {"token": "__PLACEHOLDER__"}, path=path)[0], 400)
+        self.assertEqual(self.request("POST", {"token": "test-token"}, {"Origin": "https://untrusted.example"}, path=path)[0], 403)
+        with patch("pia_runtime.credentials._native_set", side_effect=RuntimeError("private-test-token")):
+            self.assertEqual(self.request("POST", {"token": "private-test-token"}, path=path),
+                             (500, {"error": "credential_store_unavailable"}))
+        self.runtime.settings.mode = "cloud"
+        self.assertEqual(self.request(path=path)[0], 403)
+        self.assertEqual(self.request("DELETE", path=path)[0], 403)
 
     def test_invalid_requests_do_not_modify_credentials(self):
         for body in ({}, {"api_key": ""}, {"api_key": "__PLACEHOLDER__"}, {"api_key": 123},

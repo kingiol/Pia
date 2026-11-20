@@ -228,6 +228,7 @@ class EventEngine:
     def derive_portfolio_risk_event(
         self,
         snapshot: dict[str, Any],
+        previous: dict[str, Any] | None,
         *,
         user_id: str = "default",
     ) -> dict[str, Any] | None:
@@ -235,18 +236,14 @@ class EventEngine:
         if not getattr(self.runtime.settings, "auto_event_generation", True):
             return None
         snapshot_id = str(snapshot["snapshot_id"])
-        previous = self._latest_payload(
-            "portfolio_snapshots",
-            "user_id = ? AND id <> ?",
-            (user_id, snapshot_id),
-        )
         if not previous:
             return None
 
+        rules = self.runtime.get_rules(user_id)["rules"]
         current_drawdown = _number(snapshot.get("drawdown"))
         previous_drawdown = _number(previous.get("drawdown"))
-        current_weight = _max_position_weight(snapshot, self.runtime.rules)
-        previous_weight = _max_position_weight(previous, self.runtime.rules)
+        current_weight = _max_position_weight(snapshot, rules)
+        previous_weight = _max_position_weight(previous, rules)
         drawdown_delta = current_drawdown - previous_drawdown
         weight_delta = current_weight - previous_weight
         drawdown_threshold = float(getattr(
@@ -260,11 +257,11 @@ class EventEngine:
             0.10,
         ))
         crossed_breach = (
-            _has_position_breach(snapshot, self.runtime.rules)
-            and not _has_position_breach(previous, self.runtime.rules)
+            _has_position_breach(snapshot, rules)
+            and not _has_position_breach(previous, rules)
         ) or (
-            current_drawdown >= float(self.runtime.rules.get("drawdown_limit", 1))
-            and previous_drawdown < float(self.runtime.rules.get("drawdown_limit", 1))
+            current_drawdown >= float(rules.get("drawdown_limit", 1))
+            and previous_drawdown < float(rules.get("drawdown_limit", 1))
         )
         if (
             abs(drawdown_delta) < drawdown_threshold
@@ -273,7 +270,7 @@ class EventEngine:
         ):
             return None
 
-        latest_market = self._latest_row("market_snapshots")
+        latest_market = self._latest_row("market_snapshots", "as_of = ?", (snapshot["as_of"],))
         payload = {
             "as_of": snapshot.get("as_of"),
             "occurred_at": snapshot.get("observed_at") or now_iso(),

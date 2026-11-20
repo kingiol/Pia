@@ -5,9 +5,10 @@ import math
 import threading
 import time
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .adapters import (
     AkshareMarketProvider,
@@ -66,6 +67,10 @@ class TaskExpired(RuntimeError):
 
 class TaskCancelled(RuntimeError):
     code = "TASK_CANCELLED"
+
+
+class PortfolioAsOfUnavailable(ValueError):
+    code = "PORTFOLIO_AS_OF_UNAVAILABLE"
 
 
 def _evidence_quality(value: Any) -> str:
@@ -194,13 +199,16 @@ class PiaRuntime:
             self.rule_snapshot_id = str(default_ruleset["id"])
         else:
             self.rule_snapshot_id = self.db.save_ruleset(self.rules, "default")
+        self.credential_store = CredentialStore()
+        self._credential_lock = threading.Lock()
+        if self.settings.mode == "local":
+            saved_or_env, _ = self.credential_store.resolve("TUSHARE_TOKEN", prefer_saved=True)
+            self.settings.tushare_token = saved_or_env or self.settings.tushare_token
         self.fixture_provider = FixtureMarketProvider(self.settings.fixture_dir)
-        self.live_providers = [
-            AkshareMarketProvider(),
-            TushareMarketProvider(self.settings.tushare_token),
-        ]
         self.providers = ProviderRegistry(
-            [self.fixture_provider, *self.live_providers],
+            [self.fixture_provider, AkshareMarketProvider(), TushareMarketProvider(
+                self.settings.tushare_token, daily_only=self.settings.mode == "local",
+            )],
             retry_attempts=self.settings.provider_retry_attempts,
             retry_backoff_seconds=self.settings.provider_retry_backoff_seconds,
             retry_max_backoff_seconds=self.settings.provider_retry_max_backoff_seconds,
@@ -286,8 +294,6 @@ class PiaRuntime:
         )
         self.llm_budget = BudgetLedger(self.db)
         self.llm.ledger = self.llm_budget
-        self.credential_store = CredentialStore()
-        self._credential_lock = threading.Lock()
         self._deepseek_credential_clients = [self.deepseek]
         if self.settings.llm_policy_path:
             from .credentials import configured_secret
@@ -341,6 +347,30 @@ class PiaRuntime:
             self.settings.deepseek_api_key = resolved
             for client in self._deepseek_credential_clients:
                 client.api_key = resolved
+            return {"configured": bool(resolved), "source": source}
+
+    def tushare_credential_status(self) -> dict[str, Any]:
+        if self.settings.mode != "local":
+            raise ValueError("credential settings require local mode")
+        with self._credential_lock:
+            value, source = self.credential_store.resolve("TUSHARE_TOKEN", prefer_saved=True)
+            return {"configured": bool(value), "source": source}
+
+    def update_tushare_credential(self, value: str | None) -> dict[str, Any]:
+        if self.settings.mode != "local":
+            raise ValueError("credential settings require local mode")
+        with self._credential_lock:
+            if value is None:
+                self.credential_store.delete("TUSHARE_TOKEN")
+            else:
+                self.credential_store.set("TUSHARE_TOKEN", value)
+            resolved, source = self.credential_store.resolve("TUSHARE_TOKEN", prefer_saved=True)
+            if value is not None and (source != "saved" or resolved != value.strip()):
+                raise RuntimeError("native credential manager did not save the credential")
+            if value is None and source == "saved":
+                raise RuntimeError("native credential manager did not clear the credential")
+            self.providers.replace(TushareMarketProvider(resolved, daily_only=True))
+            self.settings.tushare_token = resolved
             return {"configured": bool(resolved), "source": source}
 
     def health(self) -> dict[str, Any]:
@@ -971,6 +1001,29 @@ class PiaRuntime:
             sources=sources or None,
         )
 
+    def _portfolio_for_task(
+        self, task: Task, as_of: str, *, snapshot_id: str | None = None, fixture_name: str | None = None,
+    ) -> dict[str, Any]:
+        allow_fixture = self.settings.data_provider == "fixture" or bool(task.target.get("_fixture"))
+        snapshot = self._load_snapshot_by_id(
+            "portfolio_snapshots", snapshot_id or task.target.get("_portfolio_snapshot_id"), task.user_id,
+        )
+        if snapshot and snapshot["as_of"] <= as_of and (allow_fixture or snapshot["source"] != "fixture"):
+            return snapshot
+        if fixture_name and allow_fixture:
+            snapshot = self.portfolio_provider.get_portfolio_snapshot(fixture_name)
+            if snapshot["as_of"] <= as_of:
+                return snapshot
+            raise PortfolioAsOfUnavailable(f"Portfolio fixture is later than the research date {as_of}.")
+        snapshot = self.db.get_latest_portfolio_snapshot(task.user_id, as_of=as_of, include_fixture=False)
+        if snapshot:
+            return snapshot
+        if allow_fixture and not self.db.get_latest_portfolio_snapshot(task.user_id, include_fixture=False):
+            snapshot = self.portfolio_provider.get_portfolio_snapshot("default.json")
+            if snapshot["as_of"] <= as_of:
+                return snapshot
+        raise PortfolioAsOfUnavailable(f"No portfolio snapshot is available on or before {as_of}.")
+
     def wait_for_task(
         self,
         task_id: str,
@@ -1354,10 +1407,19 @@ class PiaRuntime:
         format_name: str,
         content: Any,
         user_id: str = "default",
+        *,
+        as_of: str | None = None,
     ) -> dict[str, Any]:
+        today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        if as_of is not None and (date.fromisoformat(as_of).isoformat() != as_of or as_of > today):
+            raise ValueError("Portfolio date must be YYYY-MM-DD and no later than today")
         snapshot = parse_portfolio(format_name, content)
-        snapshot["user_id"] = user_id
+        snapshot.update(user_id=user_id, as_of=as_of or today, observed_at=now_iso())
         self.db.user_seed(user_id)
+        previous = (
+            self.db.get_latest_portfolio_snapshot(user_id, as_of=today, include_fixture=False)
+            if snapshot["as_of"] == today else None
+        )
         self.db.save_portfolio_snapshot(snapshot)
         self.analytics.save_snapshot(
             snapshot_id=snapshot["snapshot_id"],
@@ -1374,10 +1436,7 @@ class PiaRuntime:
             "position_count": len(snapshot["positions"]),
             "user_id": user_id,
         }, user_id=user_id)
-        risk_event = self.events.derive_portfolio_risk_event(
-            snapshot,
-            user_id=user_id,
-        )
+        risk_event = self.events.derive_portfolio_risk_event(snapshot, previous, user_id=user_id)
         if risk_event:
             self.db.audit(None, "PORTFOLIO_RISK_EVENT_GENERATED", {
                 "snapshot_id": snapshot["snapshot_id"],
@@ -1396,8 +1455,7 @@ class PiaRuntime:
             providers = [self.fixture_provider]
         else:
             providers = self._provider_chain("market_snapshot")
-        if not providers:
-            raise RuntimeError("CAPABILITY_UNAVAILABLE: market_snapshot")
+        provider = providers[0] if providers else self.provider
 
         previous_scope = getattr(self._provider_context, "user_id", "default")
         self._provider_context.user_id = user_id
@@ -1415,7 +1473,7 @@ class PiaRuntime:
 
         try:
             worker = DataWorker(
-                providers[0], self.analytics, self.observability, call_provider=call,
+                provider, self.analytics, self.observability, call_provider=call,
             )
             result = worker.sync_market_data(as_of, symbols)
             if result.get("market_snapshot"):
@@ -1556,6 +1614,8 @@ class PiaRuntime:
             raise
         payload = payload or {}
         as_of = str(payload.get("as_of") or task.target.get("as_of") or "2026-11-05")
+        portfolio_as_of = str(task.target.get("as_of") or as_of)
+        portfolio_fixture = task.target.get("_fixture", {}).get("portfolio")
         if tool_name == "get_market_snapshot":
             _, snapshot = self._provider_call(
                 "market_snapshot",
@@ -1580,16 +1640,9 @@ class PiaRuntime:
             )
             return series
         if tool_name == "get_portfolio_snapshot":
-            return (
-                self._load_snapshot_by_id(
-                    "portfolio_snapshots",
-                    payload.get("snapshot_id"),
-                    task.user_id,
-                )
-                or self.db.get_latest_portfolio_snapshot(task.user_id)
-                or self.portfolio_provider.get_portfolio_snapshot(
-                    str(payload.get("fixture", "default.json"))
-                )
+            return self._portfolio_for_task(
+                task, portfolio_as_of, snapshot_id=payload.get("snapshot_id"),
+                fixture_name=payload.get("fixture") or portfolio_fixture,
             )
         if tool_name == "get_task_trace":
             detail = self.task_detail(task.id, task.user_id)
@@ -1616,7 +1669,9 @@ class PiaRuntime:
                     "get_market_snapshot",
                     as_of,
                 )
-            portfolio = payload.get("portfolio") or self.portfolio_provider.get_portfolio_snapshot()
+            portfolio = payload.get("portfolio") or self._portfolio_for_task(
+                task, portfolio_as_of, fixture_name=portfolio_fixture,
+            )
             rules, rule_snapshot_id = self._rules_for_task(task)
             return evaluate_close_review(
                 market,
@@ -1713,25 +1768,13 @@ class PiaRuntime:
                 "instruments": instruments,
             }
         if tool_name == "calculate_exposure":
-            portfolio = payload.get("portfolio") or (
-                self._load_snapshot_by_id(
-                    "portfolio_snapshots",
-                    payload.get("snapshot_id"),
-                    task.user_id,
-                )
-                or self.db.get_latest_portfolio_snapshot(task.user_id)
-                or self.portfolio_provider.get_portfolio_snapshot()
+            portfolio = payload.get("portfolio") or self._portfolio_for_task(
+                task, portfolio_as_of, snapshot_id=payload.get("snapshot_id"), fixture_name=portfolio_fixture,
             )
             return self._calculate_exposure(portfolio)
         if tool_name == "simulate_position_change":
-            portfolio = payload.get("portfolio") or (
-                self._load_snapshot_by_id(
-                    "portfolio_snapshots",
-                    payload.get("snapshot_id"),
-                    task.user_id,
-                )
-                or self.db.get_latest_portfolio_snapshot(task.user_id)
-                or self.portfolio_provider.get_portfolio_snapshot()
+            portfolio = payload.get("portfolio") or self._portfolio_for_task(
+                task, portfolio_as_of, snapshot_id=payload.get("snapshot_id"), fixture_name=portfolio_fixture,
             )
             return self._simulate_position_change(portfolio, payload)
         if tool_name == "save_evidence":
@@ -1947,23 +1990,32 @@ class PiaRuntime:
                 f"is unavailable ({requested.health().status})"
             )
         selected = chain[0]
-        if selected.provider_id != self.settings.data_provider:
+        preferred = self._market_provider_preference("market_snapshot")
+        if selected.provider_id != preferred:
             if not self.settings.provider_fallback_enabled:
                 raise RuntimeError(
                     f"CAPABILITY_DISABLED: provider {self.settings.data_provider} is unavailable"
                 )
             self.db.audit(None, "PROVIDER_FALLBACK", {
-                "requested": self.settings.data_provider,
+                "requested": preferred,
                 "fallback": selected.provider_id,
                 "reason": "preferred provider unavailable",
             })
         return selected
 
-    def _provider_chain(self, capability: str) -> list[Any]:
+    def _market_provider_preference(self, capability: str, symbol: str = "") -> str:
+        if self.settings.mode == "local" and self.settings.data_provider != "fixture":
+            if capability == "daily_bars" and self.settings.tushare_token and TushareMarketProvider.supports_free_daily(symbol):
+                return "tushare"
+            if self.settings.data_provider == "tushare":
+                return "akshare"
+        return self.settings.data_provider
+
+    def _provider_chain(self, capability: str, symbol: str = "") -> list[Any]:
         """Return live providers for live mode, keeping fixtures replay-only."""
         chain = self.providers.select_chain(
             capability,
-            preferred_provider_id=self.settings.data_provider,
+            preferred_provider_id=self._market_provider_preference(capability, symbol),
         )
         if self.settings.data_provider == "fixture":
             return chain
@@ -1971,6 +2023,8 @@ class PiaRuntime:
             provider
             for provider in chain
             if provider.provider_id != self.fixture_provider.provider_id
+            and not (isinstance(provider, TushareMarketProvider) and provider.daily_only
+                     and not provider.supports_free_daily(symbol))
         ]
 
     def _provider_call(
@@ -2202,6 +2256,11 @@ class PiaRuntime:
                 "market_snapshots",
                 task.target.get("_market_snapshot_id"),
             )
+            if market and (
+                market["as_of"] != as_of
+                or (market["source"] == "fixture" and self.settings.data_provider != "fixture" and not task_fixture.get("market"))
+            ):
+                market = None
             if market is None and not task_fixture.get("market"):
                 market = self._load_reusable_market_snapshot(as_of)
             if market is None:
@@ -2211,6 +2270,9 @@ class PiaRuntime:
                     as_of,
                     fixture_name=task_fixture.get("market"),
                 )
+            if market["as_of"] > as_of or (market["as_of"] != as_of and market.get("quality") == "verified"):
+                raise ValueError("MARKET_SNAPSHOT_DATE_MISMATCH")
+            portfolio = self._portfolio_for_task(task, as_of, fixture_name=task_fixture.get("portfolio"))
             if "trading_calendar" not in market:
                 _, calendar = self._provider_call("trading_calendar", "get_trading_calendar", as_of, as_of)
                 market["trading_calendar"] = calendar
@@ -2226,24 +2288,6 @@ class PiaRuntime:
                     snapshot_id=market["snapshot_id"],
                     provenance=instrument.get("provenance", market.get("provenance", {})),
                 )
-            portfolio = self._load_snapshot_by_id(
-                "portfolio_snapshots",
-                task.target.get("_portfolio_snapshot_id"),
-                task.user_id,
-            )
-            if portfolio is None:
-                explicit_portfolio_fixture = task_fixture.get("portfolio")
-                if explicit_portfolio_fixture:
-                    portfolio = self.portfolio_provider.get_portfolio_snapshot(
-                        explicit_portfolio_fixture
-                    )
-                else:
-                    portfolio = self.db.get_latest_portfolio_snapshot(task.user_id)
-            if portfolio is None:
-                if self.settings.data_provider == "fixture":
-                    portfolio = self.portfolio_provider.get_portfolio_snapshot("default.json")
-                else:
-                    raise ValueError("PORTFOLIO_UNAVAILABLE")
             market_quality = validate_snapshot(market, "market")
             market["quality"] = market_quality["quality"]
             market["quality_errors"] = list(market_quality["missing"]) + [
@@ -2358,7 +2402,7 @@ class PiaRuntime:
                 provider_id=str(portfolio.get("provider_id") or portfolio.get("source", "unknown")),
                 source_type="portfolio",
                 title="Portfolio exposure snapshot",
-                observed_at=market["observed_at"],
+                observed_at=portfolio.get("observed_at") or market["observed_at"],
                 as_of=portfolio["as_of"],
                 expires_at=f"{portfolio['as_of']}T23:59:59+08:00",
                 quality=str(portfolio.get("quality", "partial")),
@@ -2463,7 +2507,7 @@ class PiaRuntime:
             )
             self.events.handle_task_result(task)
         except Exception as error:  # Keep the task visible and recoverable.
-            task.error = {"code": type(error).__name__, "message": str(error)}
+            task.error = {"code": getattr(error, "code", type(error).__name__), "message": str(error)}
             self.db.update_task(task)
             self._transition(task, TaskStatus.FAILED)
             self.events.handle_task_result(task)

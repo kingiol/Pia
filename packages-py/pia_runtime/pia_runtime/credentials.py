@@ -29,15 +29,16 @@ class CredentialStore:
     def get(self, name: str) -> str | None:
         return self.resolve(name)[0]
 
-    def resolve(self, name: str) -> tuple[str | None, str]:
+    def resolve(self, name: str, *, prefer_saved: bool = False) -> tuple[str | None, str]:
         env_value = os.getenv(name)
-        if name == "DEEPSEEK_API_KEY":
+        prefer_saved = prefer_saved or name == "DEEPSEEK_API_KEY"
+        if prefer_saved:
             saved_value = _native_get(self.service, name)
             if is_configured(saved_value):
                 return saved_value.strip(), "saved"
         if is_configured(env_value):
             return env_value.strip(), "environment"
-        if name != "DEEPSEEK_API_KEY":
+        if not prefer_saved:
             saved_value = _native_get(self.service, name)
             if is_configured(saved_value):
                 return saved_value.strip(), "saved"

@@ -342,7 +342,7 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .setup-progress::-webkit-progress-bar { background: var(--line); }
 .setup-progress::-webkit-progress-value { background: var(--accent); }
 .setup-progress::-moz-progress-bar { background: var(--accent); }
-.setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.setup-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .setup-step { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-content: start; align-items: start; gap: 8px; width: 100%; padding: 12px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .setup-step:hover { background: var(--canvas); border-color: var(--line-strong); }
 .setup-step.current { border-color: var(--accent); }

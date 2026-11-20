@@ -224,7 +224,7 @@ class RuntimeTest(unittest.TestCase):
                 })
                 runtime.db.save_market_snapshot(market)
                 runtime.db.save_portfolio_snapshot(
-                    runtime.fixture_provider.get_portfolio_snapshot("empty.json")
+                    {**runtime.fixture_provider.get_portfolio_snapshot("empty.json"), "source": "import"}
                 )
 
                 def unexpected_provider_call(*args, **kwargs):
@@ -856,7 +856,7 @@ class RuntimeTest(unittest.TestCase):
             runtime.providers = ProviderRegistry([provider])
             runtime.provider = provider
             runtime.db.save_portfolio_snapshot(
-                runtime.fixture_provider.get_portfolio_snapshot("default.json")
+                {**runtime.fixture_provider.get_portfolio_snapshot("default.json"), "source": "import"}
             )
             task = runtime.create_task(
                 "StockResearch",
@@ -1676,7 +1676,7 @@ class RuntimeTest(unittest.TestCase):
                     "avg_cost": 10,
                     "market_value": 100,
                 },
-            ], user_id="user-b")
+            ], user_id="user-b", as_of="2026-11-05")
             task = runtime.create_task(
                 target={"as_of": "2026-11-05"},
                 fixture={"market": "close-2026-11-05.json"},
@@ -1685,7 +1685,7 @@ class RuntimeTest(unittest.TestCase):
             runtime.run_task(task.id, task.target["_fixture"])
             detail = runtime.wait_for_task(task.id, user_id="user-b")
             self.assertEqual(
-                detail["evidence"][-1]["snapshot_id"],
+                next(item["snapshot_id"] for item in detail["evidence"] if item["source_type"] == "portfolio"),
                 imported["snapshot_id"],
             )
             self.assertEqual(runtime.get_profile("user-b")["user_id"], "user-b")

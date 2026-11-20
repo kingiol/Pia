@@ -239,10 +239,11 @@ export type HealthResponse = {
   llm: Record<string, unknown>;
   [key: string]: unknown;
 };
-export type DeepSeekCredentialStatus = {
+export type LocalCredentialStatus = {
   configured: boolean;
   source: "saved" | "environment" | "none";
 };
+export type DeepSeekCredentialStatus = LocalCredentialStatus;
 export type ProviderHealthResponse = {
   providers: Array<Record<string, unknown>>;
 };
@@ -380,6 +381,21 @@ export class PiaApiClient {
 
   clearDeepseekCredential(): Promise<DeepSeekCredentialStatus> {
     return this.request("/settings/deepseek", { method: "DELETE" });
+  }
+
+  tushareCredential(): Promise<LocalCredentialStatus> {
+    return this.request("/settings/tushare");
+  }
+
+  saveTushareCredential(token: string): Promise<LocalCredentialStatus> {
+    return this.request("/settings/tushare", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  clearTushareCredential(): Promise<LocalCredentialStatus> {
+    return this.request("/settings/tushare", { method: "DELETE" });
   }
 
   providers(): Promise<ProviderHealthResponse> {
@@ -685,10 +701,11 @@ export class PiaApiClient {
   importPortfolio(
     format: "csv" | "xlsx" | "excel" | "manual",
     content: unknown,
+    asOf?: string,
   ): Promise<{ portfolio: PortfolioSnapshot }> {
     return this.request("/portfolio/import", {
       method: "POST",
-      body: JSON.stringify({ format, content }),
+      body: JSON.stringify({ format, content, as_of: asOf }),
     });
   }
 

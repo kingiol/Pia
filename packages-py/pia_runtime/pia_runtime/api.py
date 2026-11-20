@@ -33,6 +33,7 @@ LOCAL_CREDENTIAL_ORIGINS = frozenset({
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 })
+LOCAL_CREDENTIAL_PATHS = {"/api/settings/deepseek", "/api/settings/tushare"}
 
 
 def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = None) -> None:
@@ -79,6 +80,37 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                 and self.headers.get("Origin") in {None, *LOCAL_CREDENTIAL_ORIGINS}
             )
 
+        def _local_credential_request(self, path: str) -> None:
+            if not self._local_credentials_allowed():
+                return self._send(403, {"error": "local_credentials_only"})
+            tushare = path == "/api/settings/tushare"
+            status = runtime.tushare_credential_status if tushare else runtime.deepseek_credential_status
+            update = runtime.update_tushare_credential if tushare else runtime.update_deepseek_credential
+            value = None
+            if self.command == "POST":
+                if (
+                    self.headers.get_content_type() != "application/json"
+                    or not 0 < int(self.headers.get("Content-Length", "0")) <= 4096
+                ):
+                    return self._send(400, {"error": "invalid_credential_request"})
+                body = self._body()
+                field = "token" if tushare else "api_key"
+                value = body.get(field)
+                if (
+                    set(body) != {field}
+                    or not isinstance(value, str)
+                    or len(value) > 1024
+                    or not value.strip()
+                    or value.strip().startswith("__")
+                    or any(character.isspace() for character in value.strip())
+                ):
+                    return self._send(400, {"error": "invalid_tushare_token" if tushare else "invalid_api_key"})
+                value = value.strip()
+            try:
+                return self._send(200, status() if self.command == "GET" else update(value))
+            except Exception:
+                return self._send(500, {"error": "credential_store_unavailable"})
+
         def _user_id(self) -> str | None:
             if not auth_token:
                 return "default"
@@ -104,10 +136,8 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                     return self._send(401, {"error": "unauthorized"})
                 if path == "/api/health":
                     return self._send(200, runtime.health())
-                if path == "/api/settings/deepseek":
-                    if not self._local_credentials_allowed():
-                        return self._send(403, {"error": "local_credentials_only"})
-                    return self._send(200, runtime.deepseek_credential_status())
+                if path in LOCAL_CREDENTIAL_PATHS:
+                    return self._local_credential_request(path)
                 if path == "/api/tasks":
                     return self._send(200, {"tasks": runtime.list_tasks(self._user_id() or "default")})
                 if path == "/api/rules":
@@ -188,12 +218,8 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                         ),
                     })
                 if path == "/api/portfolio":
-                    detail = runtime.db.fetchone(
-                        "SELECT payload_json FROM portfolio_snapshots "
-                        "WHERE user_id=? ORDER BY as_of DESC, id DESC LIMIT 1",
-                        (self._user_id() or "default",),
-                    )
-                    return self._send(200, json.loads(detail["payload_json"]) if detail else {"status": "unavailable"})
+                    snapshot = runtime.db.get_latest_portfolio_snapshot(self._user_id() or "default")
+                    return self._send(200, snapshot or {"status": "unavailable"})
                 if path == "/api/market":
                     detail = runtime.db.fetchone(
                         "SELECT payload_json FROM market_snapshots ORDER BY as_of DESC LIMIT 1"
@@ -340,26 +366,8 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
             try:
                 if not self._authorized():
                     return self._send(401, {"error": "unauthorized"})
-                if path == "/api/settings/deepseek":
-                    if not self._local_credentials_allowed():
-                        return self._send(403, {"error": "local_credentials_only"})
-                    if (
-                        self.headers.get_content_type() != "application/json"
-                        or not 0 < int(self.headers.get("Content-Length", "0")) <= 4096
-                    ):
-                        return self._send(400, {"error": "invalid_credential_request"})
-                    body = self._body()
-                    value = body.get("api_key")
-                    if (
-                        set(body) != {"api_key"}
-                        or not isinstance(value, str)
-                        or len(value) > 1024
-                        or not value.strip()
-                        or value.strip().startswith("__")
-                        or any(character.isspace() for character in value.strip())
-                    ):
-                        return self._send(400, {"error": "invalid_api_key"})
-                    return self._send(200, runtime.update_deepseek_credential(value.strip()))
+                if path in LOCAL_CREDENTIAL_PATHS:
+                    return self._local_credential_request(path)
                 body = self._body()
                 if path == "/api/candidate-scans":
                     allowed = {"as_of", "strategy_id", "strategy_version", "fixture"}
@@ -482,12 +490,14 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                         "properties": {
                             "format": {"type": "string", "enum": ["csv", "xlsx", "excel", "manual"]},
                             "content": {},
+                            "as_of": {"type": "string", "format": "date"},
                         },
                     })
                     return self._send(201, {"portfolio": runtime.import_portfolio(
                         body.get("format", "manual"),
                         body.get("content", []),
                         user_id=self._user_id() or "default",
+                        as_of=body.get("as_of"),
                     )})
                 if path == "/api/profile":
                     payload = body.get("payload", body)
@@ -731,10 +741,8 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
             try:
                 if not self._authorized():
                     return self._send(401, {"error": "unauthorized"})
-                if path == "/api/settings/deepseek":
-                    if not self._local_credentials_allowed():
-                        return self._send(403, {"error": "local_credentials_only"})
-                    return self._send(200, runtime.update_deepseek_credential(None))
+                if path in LOCAL_CREDENTIAL_PATHS:
+                    return self._local_credential_request(path)
                 if path.startswith("/api/devices/"):
                     device_id = path.split("/")[3]
                     runtime.db.unregister_device(

@@ -66,6 +66,8 @@ Provider Registry / Router
 | Queue/Scheduler | Redis、数据库队列、系统调度器 | 任务和事件调度 | P0 |
 | Platform | Tauri、Web、iOS、Android | 文件、通知、后台和安全存储 | P1 |
 
+Local 桌面可以在「设置 → Tushare」保存 Token。真实行情同步中的 A 股股票日线优先使用免费 `daily`，其余能力由 AKShare 提供。免费档为未复权日线，账户需有 120 积分权限。[Tushare 积分与频次](https://tushare.pro/document/1?doc_id=290)
+
 ## 4. Provider Contract
 
 每个 Adapter 必须声明：

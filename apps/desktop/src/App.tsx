@@ -28,7 +28,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { api, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
-import type { DeepSeekCredentialStatus, RuleReason } from "./api";
+import type { LocalCredentialStatus, RuleReason } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
 
@@ -113,21 +113,15 @@ function shanghaiDate() {
 function taskInput(
   health: { provider?: { provider_id?: string } } | null,
   market: Record<string, unknown> | null,
+  requestedDate?: string,
 ): TaskInput {
-  const snapshotId = typeof market?.snapshot_id === "string" ? market.snapshot_id : undefined;
-  const asOf = typeof market?.as_of === "string"
-    ? market.as_of
-    : health?.provider?.provider_id === "fixture"
-      ? REPLAY_AS_OF
-      : shanghaiDate();
-  if (snapshotId) return { asOf, marketSnapshotId: snapshotId };
-  if (health?.provider?.provider_id === "fixture") {
-    return {
-      asOf,
-      fixture: { market: `close-${asOf}.json`, portfolio: "default.json" },
-    };
+  const demo = health?.provider?.provider_id === "fixture";
+  const demoSnapshot = market?.provider_id === "fixture" || market?.source === "fixture";
+  const asOf = requestedDate ?? (demo ? REPLAY_AS_OF : !demoSnapshot && typeof market?.as_of === "string" ? market.as_of : shanghaiDate());
+  if (market?.as_of === asOf && market.quality === "verified" && typeof market.snapshot_id === "string" && demo === demoSnapshot) {
+    return { asOf, marketSnapshotId: market.snapshot_id };
   }
-  return { asOf };
+  return demo ? { asOf, fixture: { market: `close-${asOf}.json` } } : { asOf };
 }
 
 function evidenceQuality(evidence: Evidence) {
@@ -208,6 +202,7 @@ function NavIcon({ name }: { name: (typeof nav)[number][2] }) {
 type SetupState = {
   profile: boolean;
   portfolio: boolean;
+  rules: boolean;
   data: boolean;
   review: boolean;
 };
@@ -220,6 +215,7 @@ function SetupGuide({ setup, onNavigate, onCreateReview }: {
   const steps = [
     { key: "profile" as const, title: "告诉 Pia 你的投资方式", description: "风险偏好、投资目标和可研究范围", action: "去设置", onClick: () => onNavigate("Profile") },
     { key: "portfolio" as const, title: "导入你的持仓", description: "支持 CSV、Excel 或手工录入", action: "导入持仓", onClick: () => onNavigate("Portfolio") },
+    { key: "rules" as const, title: "设置一条持仓规则", description: "为单只股票设置仓位上限", action: "设置规则", onClick: () => onNavigate("Rules") },
     { key: "data" as const, title: "确认数据准备好", description: "检查行情源、数据日期和模型凭据", action: "检查数据", onClick: () => onNavigate("Data Health") },
     { key: "review" as const, title: "完成第一次收盘复盘", description: "Pia 会给出结论、依据和风险提示", action: "开始复盘", onClick: onCreateReview },
   ];
@@ -479,7 +475,8 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     if (!runtimeReady) return;
     setBusy(true);
     try {
-      const result = await api.createTask(taskInput(health, market));
+      const date = health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : shanghaiDate();
+      const result = await api.createTask(taskInput(health, market, date));
       openResearch(result.task.id);
       setView("Overview");
       await refresh();
@@ -838,11 +835,13 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   }), [tasks]);
   const setup = useMemo<SetupState>(() => ({
     profile: Boolean(profile?.payload && Object.keys(profile.payload as Record<string, unknown>).length > 0),
-    portfolio: Boolean(portfolio && Array.isArray(portfolio.positions) && portfolio.positions.length > 0),
-    data: health?.status === "ok" && health.provider.status === "healthy" && Boolean(market?.snapshot_id)
-      && (market?.provider_id !== "fixture" || health.provider.provider_id === "fixture"),
-    review: tasks.length > 0,
-  }), [health, market, portfolio, profile, tasks]);
+    portfolio: Boolean(portfolio?.source === "import" && Array.isArray(portfolio.positions) && portfolio.positions.length > 0),
+    rules: Boolean(rules?.version && rules.version !== "v1"),
+    data: health?.status === "ok" && health.provider.status === "healthy" && market?.quality === "verified"
+      && market.as_of === (health.provider.provider_id === "fixture" ? REPLAY_AS_OF : shanghaiDate()),
+    review: tasks.some((task) => task.trigger_type === "MarketClose" && !task.target._replay_of
+      && !task.error && ["BLOCKED", "NO_ACTION", "WAITING_APPROVAL", "DONE"].includes(task.status)),
+  }), [health, market, portfolio, profile, rules, tasks]);
   const isReplayData = market?.provider_id === "fixture" || market?.source === "fixture" || health?.provider?.provider_id === "fixture";
   const dataState = !health
     ? { label: "等待行情数据", tone: "connecting", healthLabel: "正在连接运行环境" }
@@ -852,7 +851,9 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         ? { label: "数据降级", tone: "degraded", healthLabel: "需要检查" }
         : isReplayData
           ? { label: "回放数据", tone: "replay", healthLabel: health.provider.provider_id === "fixture" ? "回放就绪" : "非实时快照" }
-          : { label: "实时数据", tone: "live", healthLabel: "数据正常" };
+          : market?.as_of === shanghaiDate() && market.quality === "verified"
+            ? { label: "当日行情", tone: "live", healthLabel: "数据正常" }
+            : { label: "已有行情快照", tone: "degraded", healthLabel: "请核对日期和质量" };
   const visibleTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return tasks;
@@ -936,7 +937,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
             </div>
             <button className="icon-button notification-button" title={`通知 · ${unreadNotifications} 条未读`} aria-label={`通知，${unreadNotifications} 条未读`} onClick={() => setView("Notifications")}><BellIcon size={16} aria-hidden="true" />{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span> : null}</button>
             <button className="icon-button" title="刷新" aria-label="刷新" onClick={() => void refresh()}><ArrowClockwiseIcon size={16} aria-hidden="true" /></button>
-            <button className={`primary-button${view === "Overview" || view === "Research" ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />开始今日复盘</button>
+            <button className={`primary-button${view === "Overview" || view === "Research" ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />{health?.provider?.provider_id === "fixture" ? "开始演示复盘" : "开始今日复盘"}</button>
           </div>
         </header>
 
@@ -958,10 +959,10 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         {view === "Journal" ? <JournalView items={journalItems} summary={journalSummary} patterns={journalPatterns} onSaveCandidate={(candidateKey) => void saveJournalCandidate(candidateKey)} onReviewCandidate={(candidateId, payload) => void reviewJournalCandidate(candidateId, payload)} onFeedbackCandidate={(candidateId, usageId, rating) => void feedbackJournalCandidate(candidateId, usageId, rating)} onOpenTask={(taskId) => { openResearch(taskId); setView("Research"); }} /> :
           view === "Market" ? <MarketView market={market} candidates={candidates} onResearch={(symbol) => void createResearch(symbol)} onWatch={(symbol) => void saveWatchlist("Research watchlist", [symbol, ...(watchlists.find((list) => list.name === "Research watchlist")?.symbols ?? [])])} /> :
           view === "Watchlist" ? <WatchlistView watchlists={watchlists} candidates={candidates} onSaved={(name, symbols) => void saveWatchlist(name, symbols)} onResearch={(symbol) => void createResearch(symbol)} /> :
-          view === "Portfolio" ? <PortfolioView portfolio={portfolio} onImported={() => void refresh()} /> :
+          view === "Portfolio" ? <PortfolioView portfolio={portfolio} demoDate={health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : undefined} onImported={() => void refresh()} /> :
           view === "Profile" ? <ProfileView profile={profile} onSaved={() => void refresh()} localCredentials={runtimeMode === "local" && runtimeReady} /> :
           view === "Rules" ? <RulesView rules={rules} evaluation={detail?.decision?.rationale.rules} onSaved={() => void refresh()} /> :
-          view === "Data Health" ? <DataHealthView health={health} syncResult={dataQuality} onSyncResult={setDataQuality} /> :
+          view === "Data Health" ? <DataHealthView health={health} syncResult={dataQuality} onSyncResult={(result) => { setDataQuality(result); void refresh(); }} /> :
           view === "Audit" ? <AuditView detail={detail} /> :
           view === "Notifications" ? <NotificationsView
             notifications={notifications}
@@ -1683,12 +1684,16 @@ function MarketView({ market, candidates, onResearch, onWatch }: { market: Recor
   </section>;
 }
 
-function PortfolioView({ portfolio, onImported }: { portfolio: Record<string, unknown> | null; onImported: () => void }) {
+function PortfolioView({ portfolio, demoDate, onImported }: { portfolio: Record<string, unknown> | null; demoDate?: string; onImported: () => void }) {
   const [format, setFormat] = useState<"csv" | "xlsx" | "manual">("csv");
-  const [content, setContent] = useState<string | { encoding: "base64"; data: string }>("symbol,quantity,avg_cost,market_value,sector,asset_type\n600000.SH,30000,11.82,373200,银行,stock");
+  const [asOf, setAsOf] = useState(shanghaiDate);
+  const [content, setContent] = useState<string | { encoding: "base64"; data: string }>("");
   const [fileName, setFileName] = useState("");
   const [status, setStatus] = useState("");
+  const [importing, setImporting] = useState(false);
   const positions = (portfolio?.positions as Array<Record<string, unknown>> | undefined) ?? [];
+  const totalValue = typeof portfolio?.total_value === "number" ? portfolio.total_value.toLocaleString() : "—";
+  const drawdown = typeof portfolio?.drawdown === "number" ? rulePercent(portfolio.drawdown) : "—";
   const handleFile = async (file: File | undefined) => {
     if (!file) return;
     setFileName(file.name);
@@ -1701,23 +1706,46 @@ function PortfolioView({ portfolio, onImported }: { portfolio: Record<string, un
       }
       setFormat("xlsx");
       setContent({ encoding: "base64", data: btoa(binary) });
-      setStatus(`Loaded ${file.name}`);
+      setStatus(`已读取 ${file.name}`);
       return;
     }
     setFormat("csv");
     setContent(await file.text());
-    setStatus(`Loaded ${file.name}`);
+    setStatus(`已读取 ${file.name}`);
   };
   const importPortfolio = async () => {
+    setImporting(true);
     try {
-      await api.importPortfolio(format, content);
-      setStatus("Portfolio imported");
+      const result = await api.importPortfolio(format, content, asOf);
+      setStatus(result.portfolio.as_of === asOf
+        ? `已导入 ${asOf} 的持仓快照`
+        : `服务返回的持仓日期为 ${String(result.portfolio.as_of ?? "未知")}，请核对日期和服务版本。`);
       onImported();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Import failed");
+      setStatus(friendlyError(error, "导入失败，请检查持仓文件和日期"));
+    } finally {
+      setImporting(false);
     }
   };
-  return <section className="control-grid portfolio-grid"><Panel title="持仓快照" eyebrow={String(portfolio?.as_of ?? "暂无快照")}><div className="snapshot-head compact"><div><strong className="big-number">{portfolio ? Number(portfolio.total_value).toLocaleString() : "—"}</strong><span>总市值</span></div><div><strong className="big-number">{portfolio ? `${(Number(portfolio.drawdown) * 100).toFixed(1)}%` : "—"}</strong><span>回撤</span></div></div><div className="data-table">{positions.map((position) => <div className="data-row" key={String(position.symbol)}><strong>{String(position.symbol)}</strong><span>{String(position.sector)}</span><span>{(Number(position.weight) * 100).toFixed(1)}%</span></div>)}</div></Panel><div className="portfolio-charts"><PortfolioCharts portfolio={portfolio} positions={positions} /></div><Panel title="导入持仓" eyebrow="CSV、Excel 或手工 JSON" wide><div className="form-row"><select value={format} onChange={(event) => setFormat(event.target.value as "csv" | "xlsx" | "manual")}><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="manual">手工 JSON</option></select><input type="file" accept=".csv,.xlsx" onChange={(event) => void handleFile(event.target.files?.[0])} /><button className="primary-button" onClick={() => void importPortfolio()}>导入</button></div><textarea className="import-area" value={typeof content === "string" ? content : `[${fileName || "Excel 文件"}已加载]`} onChange={(event) => setContent(event.target.value)} readOnly={typeof content !== "string"} /><span className="form-hint">{status || "导入的快照会在本地保存版本并记录审计轨迹。"}</span></Panel></section>;
+  return <section className="control-grid portfolio-grid">
+    <Panel title="持仓快照" eyebrow={String(portfolio?.as_of ?? "暂无快照")}>
+      <div className="snapshot-head compact"><div><strong className="big-number">{totalValue}</strong><span>总市值</span></div><div><strong className="big-number">{drawdown}</strong><span>回撤</span></div></div>
+      <div className="data-table">{positions.map((position) => <div className="data-row" key={String(position.symbol)}><strong>{String(position.symbol)}</strong><span>{String(position.sector)}</span><span>{(Number(position.weight) * 100).toFixed(1)}%</span></div>)}</div>
+    </Panel>
+    <div className="portfolio-charts"><PortfolioCharts portfolio={portfolio} positions={positions} /></div>
+    <Panel title="导入持仓" eyebrow="CSV、Excel 或手工 JSON" wide>
+      <div className="form-row">
+        <label htmlFor="portfolio-as-of">持仓日期</label>
+        <input id="portfolio-as-of" type="date" value={asOf} max={shanghaiDate()} onChange={(event) => setAsOf(event.target.value)} />
+        {demoDate && <button className="quiet-button" onClick={() => setAsOf(demoDate)}>填入演示日期</button>}
+        <select aria-label="持仓格式" value={format} onChange={(event) => { setFormat(event.target.value as typeof format); setContent(""); }}><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="manual">手工 JSON</option></select>
+        <input type="file" aria-label="持仓文件" accept=".csv,.xlsx" onChange={(event) => void handleFile(event.target.files?.[0])} />
+        <button className="primary-button" onClick={() => void importPortfolio()} disabled={importing || !asOf || !content}>导入</button>
+      </div>
+      <textarea className="import-area" aria-label="持仓内容" placeholder={format === "csv" ? "symbol,quantity,avg_cost,market_value,sector,asset_type" : undefined} value={typeof content === "string" ? content : `[${fileName || "Excel 文件"}已加载]`} onChange={(event) => setContent(event.target.value)} readOnly={typeof content !== "string"} />
+      <span className="form-hint" role="status">{status || "填写持仓实际对应的日期。"}{demoDate && ` 演示行情日期为 ${demoDate}，请使用对应日期的测试持仓。`}</span>
+    </Panel>
+  </section>;
 }
 
 function ProfileView({ profile, onSaved, localCredentials = false }: { profile: Record<string, unknown> | null; onSaved: () => void; localCredentials?: boolean }) {
@@ -1769,7 +1797,10 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
       </div>
       <div className="form-row"><button className="primary-button" onClick={() => void save()}>保存设置</button><span className="form-hint">{status || "设置会保存为新版本，只影响之后的研究。"}</span></div>
     </Panel>
-    {localCredentials ? <DeepSeekSettings onSaved={onSaved} /> : null}
+    {localCredentials && <>
+      <CredentialSettings kind="tushare" onSaved={onSaved} />
+      <CredentialSettings kind="deepseek" onSaved={onSaved} />
+    </>}
     <Panel title="研究上下文" eyebrow="当前快照">
       <div className="rationale"><span>✓</span><p>你的风险偏好、目标、资产范围和股票范围会参与每次研究的风险审核。</p></div>
       <div className="rationale"><span>✓</span><p>Pia 只给研究建议，不会替你提交真实订单。</p></div>
@@ -1777,8 +1808,22 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
   </section>;
 }
 
-function DeepSeekSettings({ onSaved }: { onSaved: () => void }) {
-  const [credential, setCredential] = useState<DeepSeekCredentialStatus | null>(null);
+const localCredentialSettings = {
+  deepseek: {
+    title: "DeepSeek", subtitle: "Local 模型凭据", id: "deepseek-api-key", label: "API Key", secretName: "Key",
+    environment: "DEEPSEEK_API_KEY", placeholder: "sk-...", read: api.deepseekCredential,
+    save: api.saveDeepseekCredential, clear: api.clearDeepseekCredential,
+  },
+  tushare: {
+    title: "Tushare", subtitle: "Local 行情数据", id: "tushare-token", label: "Token", secretName: "Token",
+    environment: "TUSHARE_TOKEN", placeholder: "输入 Tushare Token", read: api.tushareCredential,
+    save: api.saveTushareCredential, clear: api.clearTushareCredential,
+  },
+};
+
+function CredentialSettings({ kind, onSaved }: { kind: keyof typeof localCredentialSettings; onSaved: () => void }) {
+  const settings = localCredentialSettings[kind];
+  const [credential, setCredential] = useState<LocalCredentialStatus | null>(null);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(true);
   const [error, setError] = useState("");
@@ -1789,7 +1834,7 @@ function DeepSeekSettings({ onSaved }: { onSaved: () => void }) {
     let cancelled = false;
     setPending(true);
     setError("");
-    api.deepseekCredential().then((value) => {
+    settings.read().then((value) => {
       if (!cancelled) setCredential(value);
     }).catch(() => {
       if (!cancelled) setError("无法读取凭据状态，请重试。");
@@ -1797,45 +1842,46 @@ function DeepSeekSettings({ onSaved }: { onSaved: () => void }) {
       if (!cancelled) setPending(false);
     });
     return () => { cancelled = true; };
-  }, [reload]);
+  }, [reload, settings]);
 
   const update = async (clear: boolean) => {
     setPending(true);
     setError("");
     setMessage("");
     try {
-      const next = await (clear ? api.clearDeepseekCredential() : api.saveDeepseekCredential(draft.trim()));
+      const next = await (clear ? settings.clear() : settings.save(draft.trim()));
       setCredential(next);
       setDraft("");
-      setMessage(clear ? "已清除保存的 Key。" : "Key 已保存，后续请求立即生效。");
+      setMessage(clear ? `已清除保存的 ${settings.secretName}。` : `${settings.secretName} 已保存，后续请求立即生效。`);
       onSaved();
     } catch {
-      setError(clear ? "清除失败，请检查系统凭据存储后重试。" : "保存失败，请检查 Key 和系统凭据存储后重试。");
+      setError(clear ? "清除失败，请检查系统凭据存储后重试。" : `保存失败，请检查 ${settings.secretName} 和系统凭据存储后重试。`);
     } finally {
       setPending(false);
     }
   };
   const source = credential?.source === "saved" ? "已保存的凭据"
-    : credential?.source === "environment" ? "环境变量 DEEPSEEK_API_KEY"
+    : credential?.source === "environment" ? `环境变量 ${settings.environment}`
     : credential ? "未配置" : "正在读取";
 
-  return <Panel title="DeepSeek" eyebrow="Local 模型凭据">
+  return <Panel title={settings.title} eyebrow={settings.subtitle}>
     <form onSubmit={(event) => { event.preventDefault(); if (!pending && draft.trim()) void update(false); }}>
       <div className="profile-form">
-        <label htmlFor="deepseek-api-key"><span>API Key</span>
-          <input id="deepseek-api-key" type="password" value={draft} disabled={pending || !credential} autoComplete="off" spellCheck={false} maxLength={1024}
-            placeholder={credential?.source === "saved" ? "已保存，输入新 Key 可替换" : "sk-..."}
+        <label htmlFor={settings.id}><span>{settings.label}</span>
+          <input id={settings.id} type="password" value={draft} disabled={pending || !credential} autoComplete="off" spellCheck={false} maxLength={1024}
+            placeholder={credential?.source === "saved" ? `已保存，输入新 ${settings.secretName} 可替换` : settings.placeholder}
             onChange={(event) => { setDraft(event.target.value); setMessage(""); setError(""); }} />
         </label>
         <p className="form-hint">当前来源：{source}</p>
+        {kind === "tushare" && <p className="form-hint">同步真实行情时，A 股股票日线优先使用 Tushare 免费接口。指数、交易日历和 ETF 仍由 AKShare 提供。</p>}
       </div>
       <div className="form-row">
-        <button className="primary-button" disabled={pending || !credential || !draft.trim()}><FloppyDiskIcon size={16} aria-hidden="true" />保存 Key</button>
-        <button type="button" className="quiet-button" disabled={pending || credential?.source !== "saved"} onClick={() => void update(true)}><TrashIcon size={16} aria-hidden="true" />清除 Key</button>
+        <button className="primary-button" disabled={pending || !credential || !draft.trim()}><FloppyDiskIcon size={16} aria-hidden="true" />保存 {settings.secretName}</button>
+        <button type="button" className="quiet-button" disabled={pending || credential?.source !== "saved"} onClick={() => void update(true)}><TrashIcon size={16} aria-hidden="true" />清除 {settings.secretName}</button>
         {error ? <button type="button" className="icon-button" title="重新读取凭据状态" aria-label="重新读取凭据状态" disabled={pending} onClick={() => setReload((value) => value + 1)}><ArrowClockwiseIcon size={16} aria-hidden="true" /></button> : null}
       </div>
       {error ? <p className="credential-message auth-error" role="alert">{error}</p>
-        : <p className="credential-message form-hint" role="status">{pending ? "正在处理…" : message || (credential?.configured ? "凭据已配置" : "尚未配置模型凭据")}</p>}
+        : <p className="credential-message form-hint" role="status">{pending ? "正在处理…" : message || (credential?.configured ? "凭据已配置" : `尚未配置 ${settings.secretName}`)}</p>}
     </form>
   </Panel>;
 }
@@ -1843,17 +1889,27 @@ function DeepSeekSettings({ onSaved }: { onSaved: () => void }) {
 function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unknown> | null; evaluation?: RuleResult | null; onSaved: () => void }) {
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
-  useEffect(() => setDraft(JSON.stringify(rules, null, 2)), [rules]);
-  const save = async () => {
+  const [positionLimit, setPositionLimit] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setDraft(JSON.stringify(rules, null, 2));
+    setPositionLimit(typeof rules?.max_position_weight === "number" ? String(Math.round(rules.max_position_weight * 10000) / 100) : "");
+  }, [rules]);
+  const save = async (definition: Record<string, unknown>) => {
+    setSaving(true);
     try {
-      await api.updateRules(JSON.parse(draft) as Record<string, unknown>);
+      await api.updateRules(definition);
       setStatus("规则版本已保存");
       onSaved();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "规则必须是有效 JSON");
+      setStatus(friendlyError(error, "无法保存规则版本"));
+    } finally {
+      setSaving(false);
     }
   };
   if (!rules) return <section className="single-panel panel"><EmptyState message="规则快照不可用" /></section>;
+  const weight = Number(positionLimit);
+  const validLimit = positionLimit !== "" && Number.isFinite(weight) && weight >= 0 && weight <= 100;
   const marketGate = rules.market_gate as Record<string, unknown> | undefined;
   const thresholds = [
     ["单只股票仓位上限", rulePercent(rules.max_position_weight)],
@@ -1870,12 +1926,26 @@ function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unkno
       <dl className="rule-config-grid">{thresholds.map(([label, value]) => <div className="config-item" key={label}>
         <dt>{label}</dt><dd>{value}</dd>
       </div>)}</dl>
+      <form className="form-row" onSubmit={(event) => {
+        event.preventDefault();
+        if (validLimit && !saving) void save({ ...rules, version: `position-${Date.now()}`, max_position_weight: weight / 100 });
+      }}>
+        <label htmlFor="position-limit">单只股票仓位上限（%）</label>
+        <input id="position-limit" type="number" min="0" max="100" step="0.01" required value={positionLimit} onChange={(event) => setPositionLimit(event.target.value)} />
+        <button className="primary-button" type="submit" disabled={!validLimit || saving || weight / 100 === rules.max_position_weight}>保存新版本</button>
+        <span className="form-hint" role="status">{status || "新版本应用于之后创建的研究。"}</span>
+      </form>
       <details className="technical-disclosure">
         <summary>查看和编辑完整规则（JSON）</summary>
         <textarea aria-label="规则 JSON" className="import-area" value={draft} onChange={(event) => setDraft(event.target.value)} />
         <div className="form-row">
-          <button className="primary-button" onClick={() => void save()}>保存版本</button>
-          <span className="form-hint" role="status">{status || "新版本只影响之后创建的研究，已有研究继续使用原快照。"}</span>
+          <button className="primary-button" disabled={saving} onClick={() => {
+            try {
+              void save(JSON.parse(draft) as Record<string, unknown>);
+            } catch {
+              setStatus("规则必须是有效 JSON");
+            }
+          }}>保存 JSON 版本</button>
         </div>
       </details>
     </Panel>
@@ -1893,9 +1963,16 @@ function DataHealthView({ health, syncResult, onSyncResult }: {
   const [status, setStatus] = useState("");
   const sync = async () => {
     try {
-      const result = await api.syncData(shanghaiDate(), ["600000.SH", "510300.SH"]);
+      const date = health?.provider.provider_id === "fixture" ? REPLAY_AS_OF : shanghaiDate();
+      const result = await api.syncData(date, ["600000.SH", "510300.SH"]);
       onSyncResult(result as Record<string, unknown>);
-      setStatus("市场数据同步完成");
+      const attempts = result.provider_attempts;
+      const tushareDaily = Array.isArray(attempts) ? attempts.filter((attempt) =>
+        attempt.capability === "daily_bars" && attempt.provider_id === "tushare") : [];
+      const summary = result.market_snapshot_quality === "verified" ? `已同步 ${date} 的市场数据。` : `${date} 的行情快照未通过质量检查。`;
+      const dailyStatus = tushareDaily.some((attempt) => attempt.outcome === "success") ? " 已收到 Tushare 股票日线。"
+        : tushareDaily.length ? " Tushare 股票日线请求失败，请核对 Token 权限和行情入库时间。" : "";
+      setStatus(summary + dailyStatus);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "市场数据同步失败");
     }
@@ -1964,6 +2041,9 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
   const canApprove = needsReview && detail.result_metadata?.action_eligible === true;
   const symbol = String(detail.task.target.symbol ?? "").trim();
   const dataDate = String(detail.task.target.as_of ?? "—");
+  const portfolioDate = detail.evidence.find((item) => item.source_type === "portfolio")?.as_of;
+  const marketDate = detail.evidence.find((item) => item.source_type === "market")?.as_of;
+  const usesDemoMarket = detail.evidence.some((item) => item.source_type === "market" && (item.source === "fixture" || item.provider_id === "fixture"));
   const taskTitle = detail.task.trigger_type === "MarketClose" ? "收盘市场复盘" : symbol ? `${symbol} 研究` : detail.task.trigger_type;
   const [evidenceQuery, setEvidenceQuery] = useState("");
   const [evidenceQualityFilter, setEvidenceQualityFilter] = useState("all");
@@ -1991,8 +2071,8 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
     <div className="decision-strip">
       <div><span className="eyebrow">研究结论</span><strong className={`decision-${(decision?.status ?? "PENDING").toLowerCase()}`}>{statusLabel(decision?.status ?? "PENDING")}</strong>
         {firstBlocker && <p className="decision-reason">{ruleReasonLabel(firstBlocker)} · {ruleComparison(firstBlocker)}{(rules?.reasons.length ?? 0) > 1 && <> · <a href="#research-rules">查看全部 {rules?.reasons.length} 项</a></>}</p>}
-        <span>{decision?.next_action ? `下一步：${nextActionLabel(decision.next_action)}` : "当前尚无研究结论"}</span></div>
-      <div className="decision-meta"><span>信心 <b>{localizedLabel(levelLabels, decision?.confidence)}</b></span><span>风险 <b>{localizedLabel(levelLabels, decision?.risk_level)}</b></span><span>数据日期 <b>{dataDate}</b></span></div>
+        <span>{detail.task.error?.code === "PORTFOLIO_AS_OF_UNAVAILABLE" ? `没有 ${dataDate} 或更早的持仓快照。请导入对应日期的持仓，再重试。` : decision?.next_action ? `下一步：${nextActionLabel(decision.next_action)}` : "当前尚无研究结论"}</span></div>
+      <div className="decision-meta"><span>信心 <b>{localizedLabel(levelLabels, decision?.confidence)}</b></span><span>风险 <b>{localizedLabel(levelLabels, decision?.risk_level)}</b></span>{marketDate && <span>{usesDemoMarket ? "演示行情" : "行情日期"} <b>{marketDate}</b></span>}{portfolioDate && <span>持仓日期 <b>{portfolioDate}</b></span>}</div>
     </div>
     <div className="result-summary" role="status">
       <strong>结果：{["QUEUED", "PLANNING", "RUNNING", "REVIEWING", "PAUSED"].includes(detail.task.status) ? "处理中" : ({ complete: "完整", partial: "部分结果", none: "无可用结果", unknown: "历史完整性未知" })[detail.result_metadata?.completion ?? "unknown"]}</strong>

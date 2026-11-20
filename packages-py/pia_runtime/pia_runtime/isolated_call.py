@@ -74,10 +74,10 @@ def isolated_call(function: Callable, args=(), kwargs=None, *, timeout=45.0, che
             _children.discard(process)
 
 
-def provider_leaf(provider_id: str, credential: str | None, method: str, args: tuple, kwargs: dict):
+def provider_leaf(provider_id: str, credential: str | None, method: str, args: tuple, kwargs: dict, *, daily_only: bool = False):
     from .adapters import AkshareMarketProvider, TushareMarketProvider
 
-    provider = AkshareMarketProvider() if provider_id == "akshare" else TushareMarketProvider(credential)
+    provider = AkshareMarketProvider() if provider_id == "akshare" else TushareMarketProvider(credential, daily_only=daily_only)
     return getattr(provider, method)(*args, **kwargs)
 
 

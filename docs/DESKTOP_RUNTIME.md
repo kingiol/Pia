@@ -52,7 +52,7 @@ and UI state from the previous environment. A failed connection leaves the saved
 environment intact. Local startup waits for the sidecar before fetching workspace
 data; the sidebar and homepage remain visible during startup or connection failure.
 
-## Local Model Credentials
+## Local Credentials
 
 In Local mode, Settings includes a DeepSeek API Key field with Save and Clear
 actions and the effective source: saved credential, environment, or unconfigured.
@@ -62,8 +62,7 @@ browser storage or the workspace database.
 
 Saved `DEEPSEEK_API_KEY` credentials take precedence over the environment.
 Clearing the saved Key immediately falls back to the runtime process's
-`DEEPSEEK_API_KEY`, if present. Other credential names retain environment-first
-precedence. Saving and clearing update existing model clients, including policy
+`DEEPSEEK_API_KEY`, if present. Saving and clearing update existing model clients, including policy
 routes using that credential reference, for subsequent requests without restart.
 Authentication failures do not trigger credential fallback.
 
@@ -71,6 +70,19 @@ The credential API returns only configured status and source. It rejects Cloud
 mode, non-loopback peers/hosts, and untrusted browser origins. Supported Desktop
 origins are the packaged Tauri origins and localhost port 5173 for development.
 Cloud model credentials remain managed on the Cloud host.
+
+In **Settings → Tushare**, save or clear a Token using the same native credential
+manager. A saved Token takes precedence over `TUSHARE_TOKEN` in Local mode.
+Clearing it restores the environment value when available. New requests use the
+updated credential immediately. The form reports the effective source and never
+reads back the Token.
+
+During live synchronization, supported A-share stock symbols use Tushare's free
+unadjusted `daily` endpoint over HTTPS first. AKShare supplies ETF bars, the trading calendar,
+the market snapshot, and other research inputs. The free route calls `daily`
+only. A successful stock-bar request can be reported separately from a degraded
+market snapshot. Fixture mode continues to use fixture data. Cloud providers
+remain managed by the Cloud operator.
 
 ## Sidecar Lifecycle
 

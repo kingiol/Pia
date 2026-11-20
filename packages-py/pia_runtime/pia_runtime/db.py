@@ -1391,8 +1391,8 @@ class Database:
         snapshot_id = snapshot["snapshot_id"]
         self.execute(
             """INSERT OR REPLACE INTO portfolio_snapshots
-               (id, user_id, as_of, cash, total_value, source, payload_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (id, user_id, as_of, cash, total_value, source, payload_json, observed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 snapshot_id,
                 snapshot["user_id"],
@@ -1401,17 +1401,27 @@ class Database:
                 snapshot["total_value"],
                 snapshot["source"],
                 json.dumps(snapshot, ensure_ascii=False),
+                snapshot.get("observed_at"),
             ),
         )
         return snapshot_id
 
-    def get_latest_portfolio_snapshot(self, user_id: str = "default") -> dict[str, Any] | None:
+    def get_latest_portfolio_snapshot(
+        self, user_id: str = "default", *, as_of: str | None = None, include_fixture: bool = True,
+    ) -> dict[str, Any] | None:
+        filters = ["user_id=?"]
+        params: list[Any] = [user_id]
+        if as_of is not None:
+            filters.append("as_of<=?")
+            params.append(as_of)
+        if not include_fixture:
+            filters.append("source <> 'fixture'")
         row = self.fetchone(
-            """SELECT payload_json FROM portfolio_snapshots
-               WHERE user_id=?
-               ORDER BY as_of DESC, id DESC
+            f"""SELECT payload_json FROM portfolio_snapshots
+               WHERE {' AND '.join(filters)}
+               ORDER BY as_of DESC, observed_at DESC NULLS LAST, id DESC
                LIMIT 1""",
-            (user_id,),
+            tuple(params),
         )
         if not row:
             return None

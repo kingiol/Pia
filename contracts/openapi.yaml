@@ -47,6 +47,48 @@ paths:
               schema: {$ref: "#/components/schemas/DeepSeekCredentialStatus"}
         "401": {description: Authentication required when configured}
         "403": {description: Not a trusted local credential request}
+  /api/settings/tushare:
+    get:
+      description: Local-only effective Tushare credential status. Never returns the token.
+      responses:
+        "200":
+          description: Effective credential source
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalCredentialStatus"}
+        "401": {description: Authentication required when configured}
+        "403": {description: Not a trusted local credential request}
+    post:
+      description: Save the token in the system credential store and enable the free A-share stock daily route without restarting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+      responses:
+        "200":
+          description: Token saved
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalCredentialStatus"}
+        "400": {description: Invalid credential request}
+        "401": {description: Authentication required when configured}
+        "403": {description: Not a trusted local credential request}
+    delete:
+      description: Clear the saved token and immediately fall back to TUSHARE_TOKEN, if configured.
+      responses:
+        "200":
+          description: Saved token cleared
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LocalCredentialStatus"}
+        "401": {description: Authentication required when configured}
+        "403": {description: Not a trusted local credential request}
   /api/tasks/{task_id}/flow:
     get:
       parameters:
@@ -996,6 +1038,8 @@ components:
       scheme: bearer
   schemas:
     DeepSeekCredentialStatus:
+      $ref: "#/components/schemas/LocalCredentialStatus"
+    LocalCredentialStatus:
       type: object
       additionalProperties: false
       required: [configured, source]
@@ -1024,6 +1068,7 @@ components:
       properties:
         format: {type: string, enum: [csv, xlsx, excel, manual]}
         content: {}
+        as_of: {type: string, format: date, description: Holdings date. Defaults to today in Asia/Shanghai.}
     InvestorProfile:
       $ref: "./schemas/profile.json"
     PortfolioSnapshot:

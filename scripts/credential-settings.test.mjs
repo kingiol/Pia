@@ -18,6 +18,8 @@ test("keeps Local credentials available without workspace health data", async ()
     assert.doesNotMatch(render({ runtimeMode: "cloud" }), /id="deepseek-api-key"/);
     assert.doesNotMatch(render({}), /id="deepseek-api-key"/);
     assert.doesNotMatch(render({ runtimeMode: "local", runtimeReady: false }), /id="deepseek-api-key"/);
+    assert.match(render({ runtimeMode: "local" }), /id="tushare-token" type="password"/);
+    assert.doesNotMatch(render({ runtimeMode: "cloud" }), /id="tushare-token"/);
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;

@@ -193,7 +193,10 @@ default_retrospective_status="$(curl --noproxy '*' -sS -o /tmp/pia-cloud-retrosp
   -H "Authorization: Bearer ${PIA_CLOUD_AUTH_TOKEN}" "http://127.0.0.1:${PIA_PORT}/api/tasks/${user_b_task_id}/retrospectives")"
 test "$default_retrospective_status" = "404"
 
-default_notifications="$(curl --noproxy '*' -sS -H "Authorization: Bearer ${PIA_CLOUD_AUTH_TOKEN}" "http://127.0.0.1:${PIA_PORT}/api/notifications")"
+curl --noproxy '*' -fsS -H "Authorization: Bearer ${PIA_CLOUD_AUTH_TOKEN}" -X POST "http://127.0.0.1:${PIA_PORT}/api/events" \
+  -H 'Content-Type: application/json' \
+  -d '{"event_type":"DataQualityDegraded","payload":{"as_of":"2026-11-05","expires_at":"2020-01-01T00:00:00+00:00"}}' >/dev/null
+default_notifications="$(curl --noproxy '*' -fsS -H "Authorization: Bearer ${PIA_CLOUD_AUTH_TOKEN}" "http://127.0.0.1:${PIA_PORT}/api/notifications")"
 default_notification_id="$("$PWD/scripts/python.sh" -c 'import json,sys; items=json.load(sys.stdin)["notifications"]; assert items; print(items[0]["id"])' <<<"$default_notifications")"
 default_deliveries="$(curl --noproxy '*' -sS -H "Authorization: Bearer ${PIA_CLOUD_AUTH_TOKEN}" "http://127.0.0.1:${PIA_PORT}/api/notifications/${default_notification_id}/deliveries")"
 "$PWD/scripts/python.sh" -c 'import json,sys; rows=json.load(sys.stdin)["deliveries"]; assert rows and all(row["user_id"] == "default" for row in rows); print("NOTIFICATION DELIVERY PASS", sys.argv[1])' "$default_notification_id" <<<"$default_deliveries"

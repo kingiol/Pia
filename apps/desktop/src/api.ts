@@ -1,5 +1,5 @@
 import { PiaApiClient } from "../../../packages/contracts/generated/typescript/client";
-export type { DeepSeekCredentialStatus } from "../../../packages/contracts/generated/typescript/client";
+export type { LocalCredentialStatus } from "../../../packages/contracts/generated/typescript/client";
 import type { DeviceRegistration } from "../../../packages/contracts/generated/typescript/models";
 import type { ResultMetadata } from "../../../packages/contracts/generated/typescript/models";
 import type {
@@ -235,6 +235,9 @@ export const api = {
   deepseekCredential: () => contractClient.deepseekCredential(),
   saveDeepseekCredential: (apiKey: string) => contractClient.saveDeepseekCredential(apiKey),
   clearDeepseekCredential: () => contractClient.clearDeepseekCredential(),
+  tushareCredential: () => contractClient.tushareCredential(),
+  saveTushareCredential: (token: string) => contractClient.saveTushareCredential(token),
+  clearTushareCredential: () => contractClient.clearTushareCredential(),
   health: () => contractClient.health() as Promise<{
     status: string;
     runtime: string;
@@ -343,8 +346,9 @@ export const api = {
   importPortfolio: (
     format: "csv" | "xlsx" | "manual",
     content: string | Array<Record<string, unknown>> | { encoding: "base64"; data: string },
+    asOf?: string,
   ) =>
-    contractClient.importPortfolio(format, content) as Promise<{ portfolio: Record<string, unknown> }>,
+    contractClient.importPortfolio(format, content, asOf) as Promise<{ portfolio: Record<string, unknown> }>,
   createTask: (input: TaskInput) => {
     const target: Record<string, unknown> = {
       as_of: input.asOf,
