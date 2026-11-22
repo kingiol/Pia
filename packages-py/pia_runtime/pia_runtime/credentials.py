@@ -23,14 +23,15 @@ class CredentialStore:
     subprocesses so secrets never become shell source or logs.
     """
 
-    def __init__(self, service: str = DEFAULT_SERVICE) -> None:
-        self.service = service
+    def __init__(self, service: str | None = None) -> None:
+        self.service = service or os.getenv("PIA_CREDENTIAL_SERVICE") or DEFAULT_SERVICE
 
     def get(self, name: str) -> str | None:
         return self.resolve(name)[0]
 
     def resolve(self, name: str, *, prefer_saved: bool = False) -> tuple[str | None, str]:
-        env_value = os.getenv(name)
+        env_name = f"PIA_DEBUG_{name}" if self.service == "pia.debug" else name
+        env_value = os.getenv(env_name)
         prefer_saved = prefer_saved or name == "DEEPSEEK_API_KEY"
         if prefer_saved:
             saved_value = _native_get(self.service, name)

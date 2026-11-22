@@ -204,10 +204,12 @@ export type TaskInput = {
   fixture?: { market?: string; portfolio?: string };
 };
 
-let API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765/api";
+let API_BASE = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+  ? "" : import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765/api";
 let contractClient = new PiaApiClient({
   baseUrl: API_BASE,
   token: import.meta.env.VITE_API_TOKEN as string | undefined,
+  ...(API_BASE ? {} : { fetcher: async () => { throw new Error("桌面运行时尚未连接。"); } }),
 });
 
 function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
@@ -397,6 +399,7 @@ export const api = {
   ) => contractClient.recordRetrospective(id, payload),
   subscribeTask: (id: string, onEvent: () => void) => {
     const baseUrl = API_BASE;
+    if (!baseUrl) return () => {};
     const token = contractClient.getToken();
     if (!token) {
       const source = new EventSource(`${baseUrl}/tasks/${id}/events`);

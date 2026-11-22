@@ -1,5 +1,11 @@
 # Findings & Decisions
 
+## Desktop data isolation (2026-11-22)
+
+- Debug scripts put live and fixture runs in the same repo-local database. A packaged Release launch can default to the sidecar's temporary resource directory.
+- Desktop readiness previously checked only the runtime mode on a fixed URL. The launcher will own the local process and verify its instance on the port that it bound.
+- Keep the Release bundle identifier and credential service for compatibility. Select distinct Debug identities, including separate Debug storage for fixtures and live data. Existing data migration remains an explicit backup and restore.
+
 ## Candidate discovery and watchlists (2026-11-22)
 
 - The global refresh fetched default candidates independently of explicit scans in Market. Both successful and failed empty responses reached Watchlist as an empty array.

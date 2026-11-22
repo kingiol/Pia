@@ -1,5 +1,13 @@
 # Task Plan: Pia Full Local + Cloud Implementation
 
+## Desktop data isolation (2026-11-22)
+
+- Goal: keep Desktop Debug and Release data independent and persist Release data across quits and upgrades.
+- Scope: distinct bundle identifiers and credential services, data directories outside packaged resources, a lock per data directory, and instance-verified loopback connections. Separate fixture and live Debug data.
+- Acceptance: start both builds in either order, write distinct records, and reopen Release with its records intact. A second writer to the same data directory must fail. Existing SQLite and DuckDB files can be backed up and restored explicitly without changing the source.
+- Verification: exercise runtime identity, port allocation, data ownership, packaged Debug and Release, backup/restore, and existing CLI and frontend tests.
+- Status: complete. Verified the source Debug launcher, both macOS bundles running together, Release relaunch, duplicate-writer rejection, and a backup/restore of the isolated Release dataset.
+
 ## Candidate discovery and watchlists (2026-11-22)
 
 - Goal: make Market the single place to discover candidates and Watchlist the place to revisit saved symbols.

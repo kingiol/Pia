@@ -235,6 +235,7 @@ export type SemanticMemoryListResponse = { memories: SemanticMemory[] };
 export type HealthResponse = {
   status: string;
   runtime: string;
+  desktop_runtime?: { channel: "debug" | "release"; instance_id: string };
   provider: Record<string, unknown>;
   llm: Record<string, unknown>;
   [key: string]: unknown;

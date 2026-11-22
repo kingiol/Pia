@@ -3,14 +3,24 @@ export type RuntimeConnection = {
   cloudUrl: string;
 };
 
+export type DesktopChannel = "debug" | "release";
+
+export type DesktopEndpoint = {
+  base_url: string;
+  channel: DesktopChannel;
+  instance_id: string;
+};
+
 const CONNECTION_KEY = "pia.desktop.runtime.v1";
 const SESSION_KEY = "pia.desktop.cloud_session.v1";
 
-export async function waitForLocalRuntime(readHealth: () => Promise<{ runtime: string }>): Promise<void> {
+type LocalHealth = { runtime: string; desktop_runtime?: unknown };
+
+export async function waitForLocalRuntime(readHealth: () => Promise<LocalHealth>, expected?: DesktopEndpoint): Promise<void> {
   // Packaged sidecars need time to extract their Python runtime on a cold launch.
   const deadline = Date.now() + 60000;
   while (true) {
-    let health: { runtime: string };
+    let health: LocalHealth;
     try {
       health = await readHealth();
     } catch {
@@ -19,6 +29,10 @@ export async function waitForLocalRuntime(readHealth: () => Promise<{ runtime: s
       continue;
     }
     if (health.runtime !== "local") throw new Error("本地 API 返回了云端模式，请检查本地端口配置。");
+    const identity = health.desktop_runtime as { channel?: unknown; instance_id?: unknown } | undefined;
+    if (expected && (identity?.channel !== expected.channel || identity?.instance_id !== expected.instance_id)) {
+      throw new Error("本地运行时与当前窗口不匹配，已停止连接。");
+    }
     return;
   }
 }
@@ -42,10 +56,14 @@ export function normalizeCloudUrl(value: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-export function readConnection(storage: Pick<Storage, "getItem">, localOnly = false): RuntimeConnection | null {
+function scopedKey(key: string, channel?: DesktopChannel) {
+  return channel === "debug" ? `${key}.debug` : key;
+}
+
+export function readConnection(storage: Pick<Storage, "getItem">, localOnly = false, channel?: DesktopChannel): RuntimeConnection | null {
   if (localOnly) return { mode: "local", cloudUrl: "" };
   try {
-    const value = JSON.parse(storage.getItem(CONNECTION_KEY) ?? "null");
+    const value = JSON.parse(storage.getItem(scopedKey(CONNECTION_KEY, channel)) ?? "null");
     if (value?.mode !== "local" && value?.mode !== "cloud") return null;
     return {
       mode: value.mode,
@@ -56,9 +74,9 @@ export function readConnection(storage: Pick<Storage, "getItem">, localOnly = fa
   }
 }
 
-export function readCloudToken(storage: Pick<Storage, "getItem">, cloudUrl: string): string | undefined {
+export function readCloudToken(storage: Pick<Storage, "getItem">, cloudUrl: string, channel?: DesktopChannel): string | undefined {
   try {
-    const session = JSON.parse(storage.getItem(SESSION_KEY) ?? "null");
+    const session = JSON.parse(storage.getItem(scopedKey(SESSION_KEY, channel)) ?? "null");
     return session?.cloudUrl === cloudUrl && typeof session.token === "string"
       ? session.token.trim() || undefined
       : undefined;
@@ -67,12 +85,12 @@ export function readCloudToken(storage: Pick<Storage, "getItem">, cloudUrl: stri
   }
 }
 
-export function saveCloudToken(storage: Pick<Storage, "setItem">, cloudUrl: string, token: string) {
-  storage.setItem(SESSION_KEY, JSON.stringify({ cloudUrl, token: token.trim() }));
+export function saveCloudToken(storage: Pick<Storage, "setItem">, cloudUrl: string, token: string, channel?: DesktopChannel) {
+  storage.setItem(scopedKey(SESSION_KEY, channel), JSON.stringify({ cloudUrl, token: token.trim() }));
 }
 
-export function saveConnection(storage: Pick<Storage, "setItem">, connection: RuntimeConnection) {
-  storage.setItem(CONNECTION_KEY, JSON.stringify({
+export function saveConnection(storage: Pick<Storage, "setItem">, connection: RuntimeConnection, channel?: DesktopChannel) {
+  storage.setItem(scopedKey(CONNECTION_KEY, channel), JSON.stringify({
     mode: connection.mode,
     cloudUrl: connection.cloudUrl,
   }));

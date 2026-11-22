@@ -5,12 +5,9 @@ cd "$(dirname "$0")/.."
 export PYTHONPATH="$PWD/packages-py/pia_runtime"
 
 if [ "${1:-}" = "desktop" ]; then
-  export PIA_MODE=local
-  export PIA_HOST=127.0.0.1
-  export PIA_RUNTIME_ROOT="$PWD"
-  export PIA_DB_PATH="${PIA_DB_PATH:-$PWD/.pia/debug/pia.sqlite3}"
-  export PIA_MANAGED_RUNTIME=0
+  export PIA_DATA_PROVIDER="${PIA_DATA_PROVIDER:-fixture}"
   export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
+  exec "$PWD/scripts/desktop.sh"
 fi
 
 api_port="${PIA_PORT:-8765}"
@@ -33,11 +30,7 @@ then
 fi
 
 export PIA_PORT="$api_port"
-if [ "${1:-}" = "desktop" ]; then
-  export VITE_API_BASE="http://127.0.0.1:${api_port}/api"
-else
-  export VITE_API_BASE="${VITE_API_BASE:-http://127.0.0.1:${api_port}/api}"
-fi
+export VITE_API_BASE="${VITE_API_BASE:-http://127.0.0.1:${api_port}/api}"
 
 "$PWD/scripts/python.sh" -m pia_runtime.cli serve &
 runtime_pid=$!
@@ -63,8 +56,4 @@ if ! curl --noproxy '*' --connect-timeout 1 --max-time 2 -fsS \
   exit 1
 fi
 
-if [ "${1:-}" = "desktop" ]; then
-  "$PWD/scripts/desktop.sh"
-else
-  pnpm run dev
-fi
+pnpm run dev

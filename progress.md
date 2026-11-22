@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-11-22: Desktop data isolation
+
+- Added separate Tauri build identities, app-local data profiles, independent Debug credentials, and a per-directory writer lock. The frontend verifies the channel and instance of the runtime launched by its Tauri window.
+- Verified dynamic ports, rejected cross-instance writes, writer-lock behavior, restart persistence of holdings, watchlists and tasks, and independent connection settings in automated tests.
+- Launched source Debug and both macOS bundles with an isolated root. Saved different watchlist entries in Debug and Release, verified separation after Release relaunched, and confirmed that quitting the windows stopped their sidecars.
+- Verified backup and restore of the isolated Release SQLite and DuckDB files. Passed 285 Python test cases (7 skipped), 13 desktop tests, TypeScript, Rust and contract checks, and packaged sidecar isolation.
+
 ## 2026-11-22: Candidate discovery and watchlists
 
 - Removed candidate scans from the workspace-wide refresh and put discovery first in Market. Added data, retry, and exclusion states and source metadata on scan results.

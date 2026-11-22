@@ -16,14 +16,5 @@ if [ -z "${PIA_PYTHON:-}" ] && [ -x "$PWD/.venv/bin/python" ]; then
   export PIA_PYTHON="$PWD/.venv/bin/python"
 fi
 
-if [ "${PIA_MANAGED_RUNTIME:-1}" != "0" ]; then
-  if ! find "$PWD/apps/desktop/src-tauri/binaries" -maxdepth 1 -type f -name 'pia-runtime-*' -print -quit 2>/dev/null | grep -q .; then
-    "$PWD/scripts/build-sidecar.sh"
-  fi
-fi
-
 cd apps/desktop/src-tauri
-if [ "${PIA_MANAGED_RUNTIME:-1}" = "0" ]; then
-  exec cargo tauri dev --config '{"bundle":{"externalBin":[]}}'
-fi
-exec cargo tauri dev
+exec cargo tauri dev --config tauri.debug.conf.json --config '{"bundle":{"externalBin":[]}}'

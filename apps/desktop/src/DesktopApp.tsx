@@ -10,6 +10,8 @@ import {
   saveCloudToken,
   saveConnection,
   waitForLocalRuntime,
+  type DesktopChannel,
+  type DesktopEndpoint,
   type RuntimeConnection,
 } from "./runtimeConnection";
 
@@ -17,15 +19,20 @@ const LOCAL_API = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765/api";
 const LOCAL_TOKEN = import.meta.env.VITE_API_TOKEN as string | undefined;
 const LOCAL_ONLY = import.meta.env.VITE_DESKTOP_LOCAL_ONLY === "1";
 
-async function startLocalRuntime() {
-  if ("__TAURI_INTERNALS__" in window) {
+async function startLocalRuntime(channel?: DesktopChannel) {
+  let endpoint: DesktopEndpoint | undefined;
+  if (channel) {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("ensure_local_runtime");
+    endpoint = await invoke<DesktopEndpoint>("ensure_local_runtime");
+    if (endpoint.channel !== channel) throw new Error("本地运行时与当前窗口不匹配，已停止连接。");
   }
-  const client = new PiaApiClient({ baseUrl: LOCAL_API, token: LOCAL_TOKEN,
+  const baseUrl = endpoint?.base_url ?? LOCAL_API;
+  const token = channel ? undefined : LOCAL_TOKEN;
+  const client = new PiaApiClient({ baseUrl, token,
     fetcher: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(1500) }),
   });
-  await waitForLocalRuntime(() => client.health());
+  await waitForLocalRuntime(() => client.health(), endpoint);
+  return { baseUrl, token };
 }
 
 function connectionError(error: unknown) {
@@ -35,13 +42,13 @@ function connectionError(error: unknown) {
   return /\p{Script=Han}/u.test(message) ? message : "连接运行环境失败，请检查服务后重试。";
 }
 
-export function DesktopApp() {
+export function DesktopApp({ channel }: { channel?: DesktopChannel } = {}) {
   const [connection] = useState<RuntimeConnection>(() =>
-    readConnection(window.localStorage, LOCAL_ONLY) ?? { mode: "local", cloudUrl: "" });
+    readConnection(window.localStorage, LOCAL_ONLY, channel) ?? { mode: "local", cloudUrl: "" });
   const [choosing, setChoosing] = useState(false);
   const [ready, setReady] = useState(false);
   const [cloudUrl, setCloudUrl] = useState(connection.cloudUrl);
-  const [token, setToken] = useState(() => readCloudToken(window.sessionStorage, connection.cloudUrl) ?? "");
+  const [token, setToken] = useState(() => readCloudToken(window.sessionStorage, connection.cloudUrl, channel) ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -50,14 +57,13 @@ export function DesktopApp() {
   useEffect(() => {
     let cancelled = false;
     const boot = async () => {
-      const cloudToken = readCloudToken(window.sessionStorage, connection.cloudUrl);
-      api.configure(
-        connection.mode === "local" ? LOCAL_API : connection.cloudUrl,
-        connection.mode === "local" ? LOCAL_TOKEN : cloudToken,
-      );
       try {
-        if (connection.mode === "local") await startLocalRuntime();
+        const { baseUrl, token } = connection.mode === "local" ? await startLocalRuntime(channel) : {
+          baseUrl: connection.cloudUrl,
+          token: readCloudToken(window.sessionStorage, connection.cloudUrl, channel),
+        };
         if (cancelled) return;
+        api.configure(baseUrl, token);
         setReady(true);
       } catch (error) {
         if (!cancelled) setStartupError(connectionError(error));
@@ -65,7 +71,7 @@ export function DesktopApp() {
     };
     void boot();
     return () => { cancelled = true; };
-  }, [connection]);
+  }, [channel, connection]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -83,7 +89,7 @@ export function DesktopApp() {
         cloudUrl: mode === "cloud" ? normalizeCloudUrl(cloudUrl) : connection.cloudUrl,
       };
       if (mode === "local") {
-        await startLocalRuntime();
+        await startLocalRuntime(channel);
       } else {
         const client = new PiaApiClient({
           baseUrl: next.cloudUrl,
@@ -93,9 +99,9 @@ export function DesktopApp() {
         const health = await client.health();
         if (health.runtime !== "cloud") throw new Error("请填写云端运行时的 API 地址。");
         await client.tasks();
-        saveCloudToken(window.sessionStorage, next.cloudUrl, token);
+        saveCloudToken(window.sessionStorage, next.cloudUrl, token, channel);
       }
-      if (!LOCAL_ONLY) saveConnection(window.localStorage, next);
+      if (!LOCAL_ONLY) saveConnection(window.localStorage, next, channel);
       // Reload also disposes in-flight requests and subscriptions from the previous workspace.
       window.location.reload();
     } catch (error) {
@@ -107,7 +113,7 @@ export function DesktopApp() {
 
   return <>
     <App runtimeReady={ready} runtimeMode={connection.mode} runtimeControl={<div className="runtime-control">
-      <span className="eyebrow">运行环境</span>
+      <span className="eyebrow">{channel === "debug" ? "开发版 · Debug" : channel === "release" ? "正式版" : "运行环境"}</span>
       <div className="runtime-options" role="group" aria-label="运行环境">
         <button type="button" aria-pressed={connection.mode === "local"} disabled={pending} onClick={() => {
           if (connection.mode !== "local" || !ready) void connect("local");
@@ -115,7 +121,7 @@ export function DesktopApp() {
         {!LOCAL_ONLY && <button type="button" aria-pressed={connection.mode === "cloud"} disabled={pending} onClick={() => {
           setError(null);
           setCloudUrl(connection.cloudUrl);
-          setToken(readCloudToken(window.sessionStorage, connection.cloudUrl) ?? "");
+          setToken(readCloudToken(window.sessionStorage, connection.cloudUrl, channel) ?? "");
           setChoosing(true);
         }}><CloudIcon size={16} aria-hidden="true" />云端</button>}
       </div>

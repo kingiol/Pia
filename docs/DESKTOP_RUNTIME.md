@@ -41,7 +41,8 @@ The endpoint must report `runtime: cloud`, and the token must pass an authentica
 task-list request before the connection is saved.
 
 The selected mode and Cloud URL are saved in local storage. The token is saved
-only in session storage and bound to the exact API base. A Cloud session without a
+only in session storage and bound to the exact API base. Debug and Release use
+separate keys for both. A Cloud session without a
 token keeps the workspace and sidebar available, displays the authentication
 error, and allows reconnecting through the Cloud control or switching to Local.
 A Cloud token is never restored into
@@ -69,7 +70,10 @@ Authentication failures do not trigger credential fallback.
 The credential API returns only configured status and source. It rejects Cloud
 mode, non-loopback peers/hosts, and untrusted browser origins. Supported Desktop
 origins are the packaged Tauri origins and localhost port 5173 for development.
-Cloud model credentials remain managed on the Cloud host.
+Cloud model credentials remain managed on the Cloud host. Debug uses the
+`pia.debug` credential service and reads Debug-specific environment credentials
+such as `PIA_DEBUG_DEEPSEEK_API_KEY`. Release retains `pia` and the existing
+Release environment variable names.
 
 In **Settings → Tushare**, save or clear a Token using the same native credential
 manager. A saved Token takes precedence over `TUSHARE_TOKEN` in Local mode.
@@ -91,18 +95,22 @@ Cloud controls without changing the saved connection. It explicitly uses AKShare
 for live market data; `pnpm run debug:desktop:local:fixture` uses fixture data
 instead. `pnpm run debug:desktop` keeps both modes available and retains the
 environment's data provider (fixture when unset).
-All three commands start an external Python source runtime,
-use `.pia/debug/pia.sqlite3` by default, and disable the shell-managed sidecar.
-The local API selects an available port and passes it to Vite; port 5173 must be
-free. The commands do not build a sidecar or provision a Cloud server. Stop and
-restart the command after Python changes; exiting also stops its local API.
+All three commands open the Debug build of Tauri, which starts the Python source
+runtime when the Local workspace opens. Port 5173 is for Vite. The Python runtime
+binds its own loopback port. Restart the application after Python changes.
 
-The shell starts no sidecar until the frontend requests Local. First launch
-requests Local automatically while displaying the homepage. The command is
-idempotent and can restart an exited child. `PIA_MANAGED_RUNTIME=0` still allows an
-externally managed local API. Existing `VITE_API_BASE` and `VITE_API_TOKEN` configure
-the Local client. The readiness check allows up to 60 seconds for a packaged
-sidecar's cold extraction and Python startup, with bounded HTTP health requests.
+The shell starts a managed runtime when the frontend requests Local. Release
+uses its packaged sidecar. The child reports an instance-specific loopback API
+base after binding its port. The frontend checks the build channel and instance
+ID before sending workspace requests. The runtime accepts API requests under
+that instance's prefix. `VITE_API_BASE` and `VITE_API_TOKEN` still configure
+browser previews. Cold startup has a 60-second budget for extraction and Python
+startup, followed by an HTTP readiness check.
+
+Debug and Release each use their bundle identifier to locate local storage.
+Debug further separates fixture and live databases. The sidecar locks the data
+directory before opening SQLite or DuckDB. See [data paths and legacy
+migration](OPERATIONS.md#桌面端数据隔离).
 
 Starting directly in Cloud requires no working local Python installation.
 Switching from Local to Cloud keeps an already running sidecar alive until app
@@ -119,6 +127,8 @@ The packaged CSP permits HTTPS API connections and loopback HTTP while retaining
 - The sidebar footer contains keyboard-accessible Local / Cloud controls.
 - Cloud configuration is a modal with cancel, Escape and focus restoration.
 - Local starts or reuses the sidecar and displays the local workspace.
+- Debug and Release can run together and reconnect only to their own runtime.
+- Release data remains available after quitting and relaunching the packaged app.
 - Cloud validates its URL, runtime mode and token before saving.
 - Invalid credentials and unreachable endpoints remain recoverable.
 - Switching and reloading restore the chosen workspace without mixing data or tokens.

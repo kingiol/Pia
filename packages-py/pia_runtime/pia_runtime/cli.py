@@ -3,13 +3,18 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
+import signal
+from contextlib import nullcontext
 from pathlib import Path
+from uuid import uuid4
 
 from .api import serve
 from .backup import create_backup_package, restore_backup_package
 from .config import Settings
 from .credentials import CredentialStore, is_configured
 from .db import Database
+from .desktop_runtime import DesktopDataError, PROFILE_FILE, claim_desktop_profile, lock_desktop_data
 from .replay import run_replay
 from .runtime import PiaRuntime
 
@@ -21,6 +26,10 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     serve_parser = subparsers.add_parser("serve")
     serve_parser.add_argument("--scheduler", action="store_true")
+    desktop_parser = subparsers.add_parser("desktop")
+    desktop_parser.add_argument("--channel", choices=("debug", "release"), required=True)
+    desktop_parser.add_argument("--data-dir", type=Path, required=True)
+    desktop_parser.add_argument("--provider", required=True)
     cloud_parser = subparsers.add_parser("cloud", aliases=["server"])
     cloud_parser.add_argument("--host", default=None)
     cloud_parser.add_argument("--port", type=int, default=None)
@@ -51,6 +60,18 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "server":
         args.command = "cloud"
+    if args.command == "desktop":
+        try:
+            _serve_desktop(args)
+        except KeyboardInterrupt:
+            pass
+        except DesktopDataError as error:
+            print("PIA_DESKTOP_ERROR " + json.dumps(str(error)), flush=True)
+            raise SystemExit(1) from error
+        except (OSError, RuntimeError, ValueError):
+            print("PIA_DESKTOP_ERROR " + json.dumps("桌面运行时启动失败，请检查数据目录和运行时日志。"), flush=True)
+            raise
+        return
     if args.command == "credentials":
         store = CredentialStore()
         if args.credentials_action == "set":
@@ -67,6 +88,49 @@ def main() -> None:
             print(json.dumps({"status": "deleted", "name": args.name}, ensure_ascii=False))
         return
     settings = Settings.from_env()
+    data_dir = settings.db_path.resolve().parent
+    uses_desktop_data = settings.mode == "local" and args.command not in {"cloud", "worker"} and (data_dir / PROFILE_FILE).exists()
+    with lock_desktop_data(data_dir) if uses_desktop_data else nullcontext():
+        _run_command(args, settings)
+
+
+def _serve_desktop(args: argparse.Namespace) -> None:
+    channel = args.channel
+    provider = args.provider
+    if channel == "release" and provider == "fixture":
+        raise ValueError("Release requires a live data provider")
+    directory = args.data_dir.resolve()
+    profile = "fixture" if provider == "fixture" else "live"
+    os.environ["PIA_CREDENTIAL_SERVICE"] = "pia.debug" if channel == "debug" else "pia"
+    settings = Settings.from_env()
+    settings.mode = "local"
+    settings.host = "127.0.0.1"
+    settings.port = 0
+    settings.db_path = directory / "pia.sqlite3"
+    settings.analytics_db_path = directory / "pia.duckdb"
+    settings.data_provider = provider
+    if channel == "release":
+        if "PIA_SCHEDULER_ENABLED" not in os.environ:
+            settings.scheduler_enabled = True
+        if "PIA_NATIVE_NOTIFICATIONS" not in os.environ:
+            settings.native_notifications = True
+
+    def terminate(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, terminate)
+    with lock_desktop_data(directory):
+        claim_desktop_profile(directory, f"{channel}:{profile}")
+        runtime = PiaRuntime(settings)
+        try:
+            serve(runtime, settings.host, settings.port, desktop_identity={
+                "channel": channel, "instance_id": uuid4().hex,
+            })
+        finally:
+            runtime.close()
+
+
+def _run_command(args: argparse.Namespace, settings: Settings) -> None:
     if args.command in {"backup", "restore"} and settings.mode == "cloud":
         raise SystemExit("Use scripts/cloud-backup.sh or scripts/cloud-restore.sh for Cloud storage")
     if args.command == "serve" and args.scheduler:

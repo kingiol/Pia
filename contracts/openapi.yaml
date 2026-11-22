@@ -1492,6 +1492,13 @@ components:
       properties:
         status: {type: string}
         runtime: {type: string}
+        desktop_runtime:
+          type: object
+          required: [channel, instance_id]
+          properties:
+            channel: {type: string, enum: [debug, release]}
+            instance_id: {type: string}
+          additionalProperties: false
         provider:
           type: object
           additionalProperties: true

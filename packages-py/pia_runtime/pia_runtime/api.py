@@ -36,10 +36,21 @@ LOCAL_CREDENTIAL_ORIGINS = frozenset({
 LOCAL_CREDENTIAL_PATHS = {"/api/settings/deepseek", "/api/settings/tushare"}
 
 
-def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = None) -> None:
+def serve(
+    runtime: PiaRuntime, host: str, port: int, auth_token: str | None = None, *,
+    desktop_identity: dict[str, str] | None = None,
+) -> None:
+    desktop_prefix = f"/{desktop_identity['instance_id']}" if desktop_identity else ""
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "PiaLocalRuntime/0.1"
         _request_started_at: float | None = None
+
+        def _route(self) -> str:
+            path = urlparse(self.path).path
+            if desktop_prefix and not path.startswith(f"{desktop_prefix}/"):
+                return ""
+            return path[len(desktop_prefix):]
 
         def _send(self, status: int, payload: dict[str, Any]) -> None:
             started_at = self._request_started_at or time.perf_counter()
@@ -52,7 +63,7 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
             self.wfile.write(body)
             runtime.observability.record_request(
                 self.command,
-                urlparse(self.path).path,
+                self._route(),
                 status,
                 (time.perf_counter() - started_at) * 1000,
             )
@@ -131,11 +142,14 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
         def do_GET(self) -> None:
             self._request_started_at = time.perf_counter()
             try:
-                path = urlparse(self.path).path
+                path = self._route()
                 if path != "/api/health" and not self._authorized():
                     return self._send(401, {"error": "unauthorized"})
                 if path == "/api/health":
-                    return self._send(200, runtime.health())
+                    health = runtime.health()
+                    if desktop_identity is not None:
+                        health["desktop_runtime"] = desktop_identity
+                    return self._send(200, health)
                 if path in LOCAL_CREDENTIAL_PATHS:
                     return self._local_credential_request(path)
                 if path == "/api/tasks":
@@ -342,7 +356,7 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
             self.end_headers()
             runtime.observability.record_request(
                 self.command,
-                urlparse(self.path).path,
+                self._route(),
                 200,
                 (time.perf_counter() - (self._request_started_at or time.perf_counter())) * 1000,
             )
@@ -365,8 +379,10 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
 
         def do_POST(self) -> None:
             self._request_started_at = time.perf_counter()
-            path = urlparse(self.path).path
+            path = self._route()
             try:
+                if not path:
+                    return self._send(404, {"error": "not_found"})
                 if not self._authorized():
                     return self._send(401, {"error": "unauthorized"})
                 if path in LOCAL_CREDENTIAL_PATHS:
@@ -762,7 +778,7 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
 
         def do_DELETE(self) -> None:
             self._request_started_at = time.perf_counter()
-            path = urlparse(self.path).path
+            path = self._route()
             try:
                 if not self._authorized():
                     return self._send(401, {"error": "unauthorized"})
@@ -791,8 +807,12 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
             return
 
     server = ThreadingHTTPServer((host, port), Handler)
-    print(f"Pia {runtime.settings.mode} runtime listening on http://{host}:{port}", flush=True)
+    address = f"http://{host}:{server.server_port}"
     try:
+        if desktop_identity is None:
+            print(f"Pia {runtime.settings.mode} runtime listening on {address}", flush=True)
+        else:
+            print("PIA_DESKTOP_READY " + json.dumps({**desktop_identity, "base_url": f"{address}{desktop_prefix}/api"}), flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
         pass

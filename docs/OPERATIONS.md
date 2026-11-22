@@ -102,6 +102,26 @@ Cloud 模式统一使用 PostgreSQL 保存业务记录和分析数据，启动�
 
 ## 5. 备份与恢复
 
+### 桌面端数据隔离
+
+`Pia` 和 `Pia Debug` 使用不同的应用标识。数据保存在系统应用本地数据目录中，每个目录只允许一个运行时写入。macOS 的默认目录如下。
+
+| 版本 | 数据目录 |
+| --- | --- |
+| Release | `~/Library/Application Support/com.pia.investment` |
+| Debug 真实行情 | `~/Library/Application Support/com.pia.investment.debug/live` |
+| Debug 演示行情 | `~/Library/Application Support/com.pia.investment.debug/fixture` |
+
+每个目录同时存放 `pia.sqlite3` 和 `pia.duckdb`。Debug 使用独立的凭据服务 `pia.debug`。通过环境变量传入调试凭据时，使用 `PIA_DEBUG_DEEPSEEK_API_KEY` 或 `PIA_DEBUG_TUSHARE_TOKEN`。Release 沿用现有的 `pia` 凭据服务。
+
+**迁移旧数据**
+
+1. 确认旧库的来源和目标版本。旧版调试脚本默认使用仓库内的 `.pia/debug`。旧打包版的临时解包目录可能在退出时清理。如果旧数据只存在于仍运行的临时目录，先保留进程并确认已有可用备份。
+2. 对已关闭的旧数据目录留存完整副本。用副本制作备份时，显式设置 `PIA_DB_PATH` 和 `PIA_DUCKDB_PATH` 指向其中的 SQLite 和 DuckDB，再运行 `./scripts/python.sh -m pia_runtime.cli backup`，目标文件使用 `.zip` 后缀。
+3. 退出目标应用，确认目标数据目录为空。将这两个变量改为目标目录下的对应文件路径，再运行 `./scripts/python.sh -m pia_runtime.cli restore` 并传入备份文件。打开目标应用，核对持仓、自选、规则和历史研究记录，再保留原副本用于回退。
+
+验收时可用相同的绝对 `PIA_DESKTOP_DATA_BASE` 为两个版本指定临时根目录。两版仍会按应用标识写入各自的子目录。分别保存自选、同时运行两版并重启 Release，核对各自的数据和连接身份。
+
 - SQLite：每日复制备份或用户可导出的备份文件；
 - DuckDB：按快照版本保存；
 - Ruleset/Profile：每次变更保留版本；

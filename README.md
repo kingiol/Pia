@@ -88,25 +88,21 @@ pnpm run debug:desktop:local:fixture  # Local with fixture data
 pnpm run debug:desktop                # Local / Cloud
 ```
 
-这些命令都会启动 Python 源码 API、Vite 和 Tauri debug 窗口，无需构建
-Sidecar。`debug:desktop:local` 使用 AKShare 真实行情，`:fixture` 命令使用测试数据；
-`debug:desktop` 保留现有默认行情源（未配置时使用 fixture）。
-默认使用独立调试数据库 `.pia/debug/pia.sqlite3`；
-退出时停止本次启动的 API。Local 专用模式忽略已保存的 Cloud 选择，
-并隐藏 Cloud 入口；另一模式保留原有切换和 Cloud API 地址配置，
-不会自动部署 Cloud 服务。5173 端口须空闲；API 端口被占用时自动选取空闲端口。
-Python 源码变更后需重启命令，前端和 Rust 代码沿用开发模式热更新。
+这些命令会打开 `Pia Debug`，由 Tauri 启动 Python 源码运行时，无需打包 Sidecar。`debug:desktop:local` 使用 AKShare，`:fixture` 使用演示行情，`debug:desktop` 默认使用演示行情并保留 Cloud 入口。Cloud 调试请连接独立的测试工作区。
 
-需要真实行情和 LLM 时，先保存 DeepSeek 凭据，再运行：
+桌面运行时使用系统的应用本地数据目录。在 macOS 上，Release 位于 `~/Library/Application Support/com.pia.investment`，Debug 位于 `~/Library/Application Support/com.pia.investment.debug`，并用 `live` 和 `fixture` 子目录保存两套数据库。`PIA_DESKTOP_DATA_BASE` 可为验收指定绝对的临时根目录，应用仍会追加对应的应用标识和数据目录。每个窗口连接其自身运行时动态绑定的回环端口，退出应用时停止该运行时。
+
+Vite 的 5173 端口须空闲。Python 源码变更后需重启调试命令，前端和 Rust 继续使用开发模式热更新。[旧数据迁移和验收](docs/OPERATIONS.md#桌面端数据隔离)
+
+需要真实行情和 LLM 时，先在 Debug 的「设置」中保存 DeepSeek 凭据，再运行：
 
 ```bash
 PIA_REQUIRE_LLM=1 pnpm run debug:desktop:local
 ```
 
-原生 Tauri Desktop 还需要 Rust 与对应平台的 Tauri 构建依赖。首次构建 Sidecar 需要 PyInstaller：
+原生 Tauri Desktop 还需要 Rust 与对应平台的 Tauri 构建依赖。安装 Tauri CLI 后即可通过脚本启动调试版。
 
 ```bash
-./scripts/python.sh -m pip install pyinstaller
 cargo install tauri-cli --version '^2'
 PIA_DATA_PROVIDER=fixture ./scripts/desktop.sh
 ```

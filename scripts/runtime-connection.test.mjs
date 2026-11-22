@@ -105,6 +105,28 @@ test("binds session tokens to the exact Cloud endpoint", () => {
   assert.equal(readCloudToken(storage(), "https://a.example.com/api"), undefined);
 });
 
+test("keeps Debug connection settings and credentials separate from Release", () => {
+  const local = storage();
+  const session = storage();
+  const cloudUrl = "https://pia.example.com/api";
+  saveConnection(local, { mode: "cloud", cloudUrl }, "release");
+  saveCloudToken(session, cloudUrl, "release-session", "release");
+  assert.equal(readConnection(local, false, "debug"), null);
+  assert.equal(readCloudToken(session, cloudUrl, "debug"), undefined);
+  saveConnection(local, { mode: "local", cloudUrl: "" }, "debug");
+  saveCloudToken(session, cloudUrl, "debug-session", "debug");
+  assert.equal(readConnection(local, false, "release").mode, "cloud");
+  assert.equal(readCloudToken(session, cloudUrl, "release"), "release-session");
+});
+
+test("accepts only the desktop runtime instance started for this window", async () => {
+  const endpoint = { base_url: "http://127.0.0.1:1234/expected/api", channel: "release", instance_id: "expected" };
+  await waitForLocalRuntime(async () => ({ runtime: "local", desktop_runtime: endpoint }), endpoint);
+  for (const desktop_runtime of [undefined, { ...endpoint, channel: "debug" }, { ...endpoint, instance_id: "previous" }]) {
+    await assert.rejects(() => waitForLocalRuntime(async () => ({ runtime: "local", desktop_runtime }), endpoint), /运行时与当前窗口不匹配/);
+  }
+});
+
 test("recovers safely from corrupt, invalid, and unavailable storage", () => {
   for (const value of ["{", "null", '{"mode":"auto"}', '{"mode":"cloud","cloudUrl":"file:///api"}']) {
     assert.equal(readConnection({ getItem: () => value }), null);
