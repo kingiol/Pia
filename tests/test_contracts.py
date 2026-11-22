@@ -127,6 +127,7 @@ class ContractTest(unittest.TestCase):
             ("/api/events", "get"),
             ("/api/events", "post"),
             ("/api/portfolio/import", "post"),
+            ("/api/portfolio/positions", "post"),
             ("/api/candidates", "get"),
             ("/api/notifications", "get"),
             ("/api/notifications/{notification_id}/read", "post"),

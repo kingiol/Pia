@@ -1,5 +1,20 @@
 # Progress Log
 
+## 2026-11-22: Portfolio management and import
+
+- Replaced the fragment link and inline form with one import dialog. Added visible row actions for editing and deleting saved holdings.
+- Added a row-specific delete operation with snapshot revision checks. An empty portfolio remains a saved snapshot when its last row is removed.
+- Reproduced XLSX failure with an inline-string workbook. Updated the reader to accept inline cells and preserve column positions when cells are missing.
+- Verified CSV and XLSX upload, JSON paste, edit prefill, delete cancellation, persisted deletion, and add after clearing the last row in the browser. Both row actions fit at 375 px.
+- Passed 282 Python test cases (7 skipped), 11 desktop tests, TypeScript, generated contracts, and the macOS app build.
+
+## 2026-11-22: Single-position entry
+
+- Mapped the shared portfolio UI, database snapshot lookup, API contract, and import side effects.
+- Added the single-position form and write endpoint, including revision checks and carried-forward holdings.
+- Verified first entry, additional entry, duplicate handling, edit prefill, reload persistence, and CSV import using the production preview. Used the preview after concurrent Vite dev processes invalidated optimized dependency URLs.
+- Passed 280 Python test cases (7 skipped), 11 desktop tests, TypeScript, both frontend builds, generated contracts, and an isolated PostgreSQL concurrent-write and retry check.
+
 ## 2026-11-11: Cloud Runtime Naming
 
 - Standardized runtime modes as `local` / `cloud`, including CLI, settings,

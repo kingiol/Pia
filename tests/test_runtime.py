@@ -1,9 +1,11 @@
+import io
 import json
 import sqlite3
 import tempfile
 import threading
 import time
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +17,7 @@ from pia_runtime.db import Database
 from pia_runtime.llm import GenerationEvent, LLMRateLimited
 from pia_runtime.models import Task, TaskStatus, now_iso
 from pia_runtime.notifications import NotificationReceipt
+from pia_runtime.portfolio import parse_xlsx
 from pia_runtime.replay import run_replay
 from pia_runtime.runtime import PiaRuntime
 
@@ -1825,6 +1828,96 @@ class RuntimeTest(unittest.TestCase):
             ])
             self.assertEqual(snapshot["total_value"], 200)
             self.assertAlmostEqual(snapshot["positions"][0]["weight"], 0.5)
+
+    def test_xlsx_portfolio_import_reads_inline_strings_and_sparse_cells(self):
+        content = io.BytesIO()
+        with zipfile.ZipFile(content, "w") as workbook:
+            workbook.writestr("xl/worksheets/sheet1.xml", """<worksheet><sheetData>
+                <row r="1">
+                    <c r="A1" t="inlineStr"><is><t>symbol</t></is></c>
+                    <c r="B1" t="inlineStr"><is><t>sector</t></is></c>
+                    <c r="C1" t="inlineStr"><is><t>quantity</t></is></c>
+                    <c r="D1" t="inlineStr"><is><t>avg_cost</t></is></c>
+                    <c r="E1" t="inlineStr"><is><t>market_value</t></is></c>
+                </row>
+                <row r="2">
+                    <c r="A2" t="inlineStr"><is><t>000001</t></is></c>
+                    <c r="C2"><v>10</v></c><c r="D2"><v>12</v></c><c r="E2"><v>125</v></c>
+                </row>
+            </sheetData></worksheet>""")
+        position = parse_xlsx(content.getvalue())["positions"][0]
+        self.assertEqual(position["symbol"], "000001")
+        self.assertEqual(position["sector"], "unknown")
+        self.assertEqual(position["quantity"], 10)
+        self.assertEqual(position["avg_cost"], 12)
+        self.assertEqual(position["market_value"], 125)
+
+    def test_single_position_write_preserves_holdings_and_checks_snapshot_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = PiaRuntime(Settings(
+                db_path=Path(directory) / "pia.sqlite3",
+                fixture_dir=ROOT / "tests/fixtures",
+                rules_path=ROOT / "rules/baseline.yaml",
+            ))
+            original = runtime.import_portfolio("manual", [
+                {"symbol": "000001", "quantity": 10, "avg_cost": 10, "market_value": 100, "sector": "Banks"},
+            ], user_id="alice", as_of="2026-11-05")
+            entry = {
+                "snapshot_id": original["snapshot_id"], "as_of": "2026-11-05", "mode": "add",
+                "symbol": "510300", "quantity": 20, "avg_cost": 4.5, "market_value": 100,
+            }
+            with self.assertRaisesRegex(ValueError, "PORTFOLIO_CHANGED"):
+                runtime.save_portfolio_position(entry, user_id="bob")
+            with self.assertRaisesRegex(ValueError, "PORTFOLIO_POSITION_EXISTS"):
+                runtime.save_portfolio_position({**entry, "symbol": "000001.sz"}, user_id="alice")
+
+            added = runtime.save_portfolio_position(entry, user_id="alice")
+            with self.assertRaisesRegex(ValueError, "PORTFOLIO_CHANGED"):
+                runtime.save_portfolio_position(entry, user_id="alice")
+            edited = runtime.save_portfolio_position({
+                **entry, "snapshot_id": added["snapshot_id"], "mode": "edit", "symbol": "510300.SH",
+                "quantity": 10, "market_value": 50, "as_of": "2026-11-06",
+            }, user_id="alice")
+
+            self.assertEqual(edited["as_of"], "2026-11-06")
+            self.assertEqual(edited["total_value"], 150)
+            self.assertEqual([row["symbol"] for row in edited["positions"]], ["000001", "510300.SH"])
+            self.assertEqual(edited["positions"][0]["sector"], "Banks")
+            self.assertAlmostEqual(edited["positions"][0]["weight"], 2 / 3)
+            self.assertEqual(edited["positions"][1]["quantity"], 10)
+            self.assertEqual(runtime.db.get_latest_portfolio_snapshot("alice", as_of="2026-11-05"), added)
+            self.assertEqual(runtime._load_snapshot_by_id("portfolio_snapshots", original["snapshot_id"], "alice"), original)
+
+    def test_delete_position_uses_the_selected_row_and_preserves_empty_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = PiaRuntime(Settings(
+                db_path=Path(directory) / "pia.sqlite3",
+                fixture_dir=ROOT / "tests/fixtures",
+                rules_path=ROOT / "rules/baseline.yaml",
+            ))
+            original = runtime.import_portfolio("manual", [
+                {"symbol": "000001", "quantity": 10, "avg_cost": 10, "market_value": 100},
+                {"symbol": "000001", "quantity": 20, "avg_cost": 10, "market_value": 200},
+            ], user_id="alice", as_of="2026-11-05")
+            deletion = {
+                "snapshot_id": original["snapshot_id"], "position_index": 1, "as_of": "2026-11-05",
+                "mode": "delete", "symbol": "000001",
+            }
+            with self.assertRaisesRegex(ValueError, "PORTFOLIO_CHANGED"):
+                runtime.save_portfolio_position({**deletion, "symbol": "600000"}, user_id="alice")
+            remaining = runtime.save_portfolio_position(deletion, user_id="alice")
+            self.assertEqual([row["quantity"] for row in remaining["positions"]], [10])
+            self.assertEqual(remaining["positions"][0]["weight"], 1)
+            with self.assertRaisesRegex(ValueError, "PORTFOLIO_CHANGED"):
+                runtime.save_portfolio_position(deletion, user_id="alice")
+
+            empty = runtime.save_portfolio_position({
+                **deletion, "snapshot_id": remaining["snapshot_id"], "position_index": 0,
+            }, user_id="alice")
+            self.assertEqual(empty["positions"], [])
+            self.assertEqual(empty["total_value"], 0)
+            self.assertEqual(runtime.db.get_latest_portfolio_snapshot("alice", include_fixture=False), empty)
+            self.assertEqual(runtime._load_snapshot_by_id("portfolio_snapshots", original["snapshot_id"], "alice"), original)
 
     def test_pause_resume_preserves_task_and_emits_control_events(self):
         with tempfile.TemporaryDirectory() as directory:

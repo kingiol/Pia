@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import math
+import re
+import sys
 import threading
 import time
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -15,6 +18,7 @@ from .adapters import (
     FixtureMarketProvider,
     ProviderRegistry,
     TushareMarketProvider,
+    _canonical_symbol,
     _safe_fixture_path,
 )
 from .agent_contracts import AgentInputContract, AgentOutputContract
@@ -44,7 +48,7 @@ from .notifications import (
     WebhookNotificationProvider,
 )
 from .observability import RuntimeObservability
-from .portfolio import parse_portfolio
+from .portfolio import normalize_positions, parse_portfolio
 from .provider_provenance import CapabilityUnavailable, routed_call
 from .postgres import PostgresDatabase
 from .rules import evaluate_close_review, load_rules
@@ -1402,6 +1406,14 @@ class PiaRuntime:
     ) -> dict[str, Any]:
         return self.events.ingest(event_type, payload, dedupe_key, user_id=user_id)
 
+    @contextmanager
+    def _portfolio_write(self, user_id: str):
+        with self.db.transaction():
+            self.db.user_seed(user_id)
+            if isinstance(self.db, PostgresDatabase):
+                self.db.fetchone("SELECT id FROM users WHERE id=? FOR UPDATE", (user_id,))
+            yield
+
     def import_portfolio(
         self,
         format_name: str,
@@ -1414,13 +1426,69 @@ class PiaRuntime:
         if as_of is not None and (date.fromisoformat(as_of).isoformat() != as_of or as_of > today):
             raise ValueError("Portfolio date must be YYYY-MM-DD and no later than today")
         snapshot = parse_portfolio(format_name, content)
-        snapshot.update(user_id=user_id, as_of=as_of or today, observed_at=now_iso())
-        self.db.user_seed(user_id)
-        previous = (
-            self.db.get_latest_portfolio_snapshot(user_id, as_of=today, include_fixture=False)
-            if snapshot["as_of"] == today else None
-        )
-        self.db.save_portfolio_snapshot(snapshot)
+        with self._portfolio_write(user_id):
+            snapshot.update(user_id=user_id, as_of=as_of or today, observed_at=now_iso())
+            previous = (
+                self.db.get_latest_portfolio_snapshot(user_id, as_of=today, include_fixture=False)
+                if snapshot["as_of"] == today else None
+            )
+            self.db.save_portfolio_snapshot(snapshot)
+        return self._record_portfolio_import(snapshot, previous, format_name)
+
+    def save_portfolio_position(self, payload: dict[str, Any], user_id: str = "default") -> dict[str, Any]:
+        symbol = payload["symbol"].strip()
+        mode = payload["mode"]
+        if mode == "add" and not re.fullmatch(r"[0-9]{6}(?:\.(?:SH|SZ|BJ))?", symbol.upper()):
+            raise ValueError("INVALID_PORTFOLIO_SYMBOL")
+        values = {}
+        if mode != "delete":
+            values = {key: payload[key] for key in ("quantity", "avg_cost", "market_value")}
+            if not values["quantity"] or any(not 0 <= value <= sys.float_info.max for value in values.values()):
+                raise ValueError("INVALID_PORTFOLIO_VALUES")
+        today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        as_of = payload["as_of"]
+        if date.fromisoformat(as_of).isoformat() != as_of or as_of > today:
+            raise ValueError("Portfolio date must be YYYY-MM-DD and no later than today")
+
+        with self._portfolio_write(user_id):
+            base = self.db.get_latest_portfolio_snapshot(user_id, include_fixture=False) or {}
+            if base.get("snapshot_id") != payload["snapshot_id"]:
+                raise ValueError("PORTFOLIO_CHANGED")
+            if base and as_of < base["as_of"]:
+                raise ValueError("INVALID_PORTFOLIO_DATE")
+            rows = list(base.get("positions", []))
+            if mode == "add":
+                symbol = _canonical_symbol(symbol)
+                if any(_canonical_symbol(str(row["symbol"])) == symbol for row in rows):
+                    raise ValueError("PORTFOLIO_POSITION_EXISTS")
+                rows.append({"symbol": symbol, **values})
+            else:
+                index = payload.get("position_index")
+                if index is None:
+                    matches = [i for i, row in enumerate(rows) if row["symbol"] == symbol]
+                    if len(matches) > 1:
+                        raise ValueError("PORTFOLIO_POSITION_AMBIGUOUS")
+                    index = next(iter(matches), -1)
+                if not 0 <= index < len(rows) or rows[index]["symbol"] != symbol:
+                    raise ValueError("PORTFOLIO_CHANGED")
+                if mode == "delete":
+                    rows.pop(index)
+                else:
+                    rows[index] = {**rows[index], **values}
+            snapshot = normalize_positions(rows)
+            if not math.isfinite(snapshot["total_value"]):
+                raise ValueError("INVALID_PORTFOLIO_VALUES")
+            snapshot.update(
+                user_id=user_id, as_of=as_of, observed_at=now_iso(),
+                cash=base.get("cash", 0), drawdown=base.get("drawdown", 0), quality=base.get("quality", "verified"),
+            )
+            self.db.save_portfolio_snapshot(snapshot)
+        return self._record_portfolio_import(snapshot, base if as_of == today else None, "manual", operation=mode)
+
+    def _record_portfolio_import(
+        self, snapshot: dict[str, Any], previous: dict[str, Any] | None, format_name: str, *, operation: str = "import",
+    ) -> dict[str, Any]:
+        user_id = snapshot["user_id"]
         self.analytics.save_snapshot(
             snapshot_id=snapshot["snapshot_id"],
             kind="portfolio",
@@ -1432,6 +1500,7 @@ class PiaRuntime:
         )
         self.db.audit(None, "PORTFOLIO_IMPORTED", {
             "format": format_name,
+            "operation": operation,
             "snapshot_id": snapshot["snapshot_id"],
             "position_count": len(snapshot["positions"]),
             "user_id": user_id,

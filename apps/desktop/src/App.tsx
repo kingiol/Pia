@@ -86,11 +86,17 @@ function friendlyError(error: unknown, fallback: string) {
   const raw = error.message.trim();
   if (!raw) return fallback;
   try {
-    const payload = JSON.parse(raw) as { error?: string; message?: string };
+    const payload = JSON.parse(raw) as { error?: string; message?: string; detail?: string };
     const code = payload.error ?? payload.message;
     if (code === "task_not_found") return "这条研究记录已不存在。";
     if (code === "unauthorized") return "云端工作区需要重新连接，请输入访问令牌。";
     if (code === "CapabilityUnavailable") return "所需数据暂不可用，请检查数据源后重试。";
+    if (payload.detail === "PORTFOLIO_CHANGED") return "持仓快照已更新，请关闭表单，核对最新持仓后重试。";
+    if (payload.detail === "PORTFOLIO_POSITION_EXISTS") return "这个代码已在持仓中。请在对应行点击「编辑」。";
+    if (payload.detail === "PORTFOLIO_POSITION_AMBIGUOUS") return "这份快照有多条相同代码的记录。请合并这些记录后重新批量导入。";
+    if (payload.detail === "INVALID_PORTFOLIO_SYMBOL") return "请输入 6 位股票或 ETF 代码。";
+    if (payload.detail === "INVALID_PORTFOLIO_DATE") return "持仓日期不能早于当前快照。";
+    if (payload.detail === "INVALID_PORTFOLIO_VALUES") return "请检查持有数量、平均成本和持仓总市值。";
     if (code) return /\p{Script=Han}/u.test(code) ? code : fallback;
   } catch {
     // The runtime may return a plain-text transport error.
@@ -224,7 +230,7 @@ function SetupGuide({ setup, onNavigate, onCreateReview }: {
 }) {
   const steps = [
     { key: "profile" as const, title: "告诉 Pia 你的投资方式", description: "风险偏好、投资目标和可研究范围", action: "去设置", onClick: () => onNavigate("Profile") },
-    { key: "portfolio" as const, title: "导入你的持仓", description: "支持 CSV、Excel 或手工录入", action: "导入持仓", onClick: () => onNavigate("Portfolio") },
+    { key: "portfolio" as const, title: "添加你的持仓", description: "逐条添加，或批量导入 CSV 和 Excel", action: "添加持仓", onClick: () => onNavigate("Portfolio") },
     { key: "rules" as const, title: "设置一条持仓规则", description: "为单只股票设置仓位上限", action: "设置规则", onClick: () => onNavigate("Rules") },
     { key: "data" as const, title: "确认数据准备好", description: "检查行情源、数据日期和模型凭据", action: "检查数据", onClick: () => onNavigate("Data Health") },
     { key: "review" as const, title: "完成第一次收盘复盘", description: "Pia 会给出结论、依据和风险提示", action: "开始复盘", onClick: onCreateReview },
@@ -970,7 +976,10 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         {view === "Journal" ? <JournalView items={journalItems} summary={journalSummary} patterns={journalPatterns} onSaveCandidate={(candidateKey) => void saveJournalCandidate(candidateKey)} onReviewCandidate={(candidateId, payload) => void reviewJournalCandidate(candidateId, payload)} onFeedbackCandidate={(candidateId, usageId, rating) => void feedbackJournalCandidate(candidateId, usageId, rating)} onOpenTask={(taskId) => { openResearch(taskId); setView("Research"); }} /> :
           view === "Market" ? <MarketView market={market} candidates={candidates} onResearch={(symbol) => void createResearch(symbol)} onWatch={(symbol) => void saveWatchlist("Research watchlist", [symbol, ...(watchlists.find((list) => list.name === "Research watchlist")?.symbols ?? [])])} /> :
           view === "Watchlist" ? <WatchlistView watchlists={watchlists} candidates={candidates} onSaved={(name, symbols) => void saveWatchlist(name, symbols)} onResearch={(symbol) => void createResearch(symbol)} /> :
-          view === "Portfolio" ? <PortfolioView portfolio={portfolio} demoDate={health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : undefined} onImported={() => void refresh()} /> :
+          view === "Portfolio" ? <PortfolioView portfolio={portfolio} demoDate={health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : undefined} onChanged={(snapshot) => {
+            if (snapshot) setPortfolio(snapshot);
+            void refresh();
+          }} /> :
           view === "Profile" ? <ProfileView profile={profile} onSaved={() => void refresh()} localCredentials={runtimeMode === "local" && runtimeReady} /> :
           view === "Rules" ? <RulesView rules={rules} evaluation={detail?.decision?.rationale.rules} onSaved={() => void refresh()} /> :
           view === "Data Health" ? <DataHealthView health={health} syncResult={dataQuality} onSyncResult={(result) => { setDataQuality(result); void refresh(); }} /> :
@@ -1697,67 +1706,269 @@ function MarketView({ market, candidates, onResearch, onWatch }: { market: Recor
   </section>;
 }
 
-function PortfolioView({ portfolio, demoDate, onImported }: { portfolio: Record<string, unknown> | null; demoDate?: string; onImported: () => void }) {
-  const [format, setFormat] = useState<"csv" | "xlsx" | "manual">("csv");
-  const [asOf, setAsOf] = useState(shanghaiDate);
-  const [content, setContent] = useState<string | { encoding: "base64"; data: string }>("");
-  const [fileName, setFileName] = useState("");
-  const [status, setStatus] = useState("");
-  const [importing, setImporting] = useState(false);
-  const positions = (portfolio?.positions as Array<Record<string, unknown>> | undefined) ?? [];
-  const totalValue = typeof portfolio?.total_value === "number" ? portfolio.total_value.toLocaleString() : "—";
-  const drawdown = typeof portfolio?.drawdown === "number" ? rulePercent(portfolio.drawdown) : "—";
-  const handleFile = async (file: File | undefined) => {
-    if (!file) return;
-    setFileName(file.name);
-    if (format === "xlsx" || file.name.toLowerCase().endsWith(".xlsx")) {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = "";
-      const chunkSize = 0x8000;
-      for (let index = 0; index < bytes.length; index += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+type PortfolioPositionDraft = {
+  snapshotId: string | null;
+  asOf: string;
+  mode: "add" | "edit" | "delete";
+  position?: Record<string, unknown>;
+  positionIndex?: number;
+};
+
+function PortfolioDialog({ title, pending, onClose, children, wide }: {
+  title: string; pending: boolean; onClose: () => void; children: ReactNode; wide?: boolean;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    dialog?.querySelector<HTMLElement>("[data-initial-focus]")?.focus();
+    return () => dialog?.close();
+  }, []);
+
+  return <dialog ref={dialogRef} className={`runtime-dialog${wide ? " portfolio-import-dialog" : ""}`} aria-labelledby="portfolio-dialog-title"
+    onCancel={(event) => {
+      event.preventDefault();
+      if (!pending) onClose();
+    }}>
+    <h2 id="portfolio-dialog-title">{title}</h2>
+    {children}
+  </dialog>;
+}
+
+function PortfolioPositionDialog({ draft, onClose, onChanged }: {
+  draft: PortfolioPositionDraft;
+  onClose: () => void;
+  onChanged: (snapshot?: Record<string, unknown>) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const { position, snapshotId, asOf, mode, positionIndex } = draft;
+  const [date, setDate] = useState(asOf);
+  const deleting = mode === "delete";
+  const title = { add: "新增持仓", edit: "编辑持仓", delete: "删除持仓" }[mode];
+
+  return <PortfolioDialog title={title} pending={saving} onClose={onClose}>
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      if (saving) return;
+      const fields = new FormData(event.currentTarget);
+      const quantity = Number(fields.get("quantity"));
+      if (!deleting && quantity <= 0) {
+        setError("持有数量必须大于 0。");
+        return;
       }
-      setFormat("xlsx");
-      setContent({ encoding: "base64", data: btoa(binary) });
-      setStatus(`已读取 ${file.name}`);
-      return;
-    }
-    setFormat("csv");
-    setContent(await file.text());
-    setStatus(`已读取 ${file.name}`);
-  };
-  const importPortfolio = async () => {
-    setImporting(true);
-    try {
-      const result = await api.importPortfolio(format, content, asOf);
-      setStatus(result.portfolio.as_of === asOf
-        ? `已导入 ${asOf} 的持仓快照`
-        : `服务返回的持仓日期为 ${String(result.portfolio.as_of ?? "未知")}，请核对日期和服务版本。`);
-      onImported();
-    } catch (error) {
-      setStatus(friendlyError(error, "导入失败，请检查持仓文件和日期"));
-    } finally {
-      setImporting(false);
-    }
-  };
-  return <section className="control-grid portfolio-grid">
-    <Panel title="持仓快照" eyebrow={String(portfolio?.as_of ?? "暂无快照")}>
-      <div className="snapshot-head compact"><div><strong className="big-number">{totalValue}</strong><span>总市值</span></div><div><strong className="big-number">{drawdown}</strong><span>回撤</span></div></div>
-      <div className="data-table">{positions.map((position) => <div className="data-row" key={String(position.symbol)}><strong>{String(position.symbol)}</strong><span>{String(position.sector)}</span><span>{(Number(position.weight) * 100).toFixed(1)}%</span></div>)}</div>
-    </Panel>
-    <div className="portfolio-charts"><PortfolioCharts portfolio={portfolio} positions={positions} /></div>
-    <Panel title="导入持仓" eyebrow="CSV、Excel 或手工 JSON" wide>
-      <div className="form-row">
-        <label htmlFor="portfolio-as-of">持仓日期</label>
-        <input id="portfolio-as-of" type="date" value={asOf} max={shanghaiDate()} onChange={(event) => setAsOf(event.target.value)} />
-        {demoDate && <button className="quiet-button" onClick={() => setAsOf(demoDate)}>填入演示日期</button>}
-        <select aria-label="持仓格式" value={format} onChange={(event) => { setFormat(event.target.value as typeof format); setContent(""); }}><option value="csv">CSV</option><option value="xlsx">Excel (.xlsx)</option><option value="manual">手工 JSON</option></select>
-        <input type="file" aria-label="持仓文件" accept=".csv,.xlsx" onChange={(event) => void handleFile(event.target.files?.[0])} />
-        <button className="primary-button" onClick={() => void importPortfolio()} disabled={importing || !asOf || !content}>导入</button>
+      setSaving(true);
+      setError("");
+      try {
+        const target = {
+          snapshot_id: snapshotId,
+          as_of: date,
+          symbol: String(position?.symbol ?? fields.get("symbol")),
+          position_index: positionIndex,
+        };
+        const { portfolio } = await api.savePortfolioPosition(deleting ? { ...target, mode } : {
+          ...target,
+          mode,
+          quantity,
+          avg_cost: Number(fields.get("avg_cost")),
+          market_value: Number(fields.get("market_value")),
+        });
+        onChanged(portfolio);
+        onClose();
+      } catch (error) {
+        setError(friendlyError(error, deleting ? "删除失败，请重试。" : "保存失败，请检查持仓数据后重试。"));
+        if (error instanceof Error && error.message.includes('"PORTFOLIO_CHANGED"')) onChanged();
+      } finally {
+        setSaving(false);
+      }
+    }}>
+      {deleting && <p className="portfolio-dialog-hint">从所选日期的持仓中移除 <strong>{String(position?.symbol)}</strong>。已有研究仍可查看原持仓快照。</p>}
+      <fieldset className="runtime-fields position-fields" disabled={saving}>
+        {!deleting && <label>股票或 ETF 代码<input name="symbol" defaultValue={String(position?.symbol ?? "")} readOnly={!!position} required
+          placeholder="例如 000001" pattern={position ? undefined : "[0-9]{6}(\\.([sS][hHzZ]|[bB][jJ]))?"} autoComplete="off" /></label>}
+        <label>持仓日期<input name="as_of" type="date" value={date} onChange={(event) => setDate(event.target.value)}
+          min={snapshotId ? asOf : undefined} max={shanghaiDate()} required /></label>
+        {snapshotId && date > asOf && <small>新日期会沿用其他持仓原有的数量、成本和市值。</small>}
+        {!deleting && <>
+          <label>持有数量（股 / 份）<input name="quantity" type="number" min="0" step="any" required defaultValue={String(position?.quantity ?? "")} /></label>
+          <label>平均成本（元 / 股或份）<input name="avg_cost" type="number" min="0" step="any" required defaultValue={String(position?.avg_cost ?? "")} /></label>
+          <label>持仓总市值（元）<input name="market_value" type="number" min="0" step="any" required defaultValue={String(position?.market_value ?? "")} /></label>
+        </>}
+      </fieldset>
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      <div className="runtime-dialog-actions">
+        <button type="button" className="quiet-button" data-initial-focus={deleting || undefined} disabled={saving} onClick={onClose}>取消</button>
+        <button className={deleting ? "danger-button" : "primary-button"} disabled={saving}>
+          {deleting ? (saving ? "正在删除…" : "确认删除") : (saving ? "正在保存…" : "保存持仓")}
+        </button>
       </div>
-      <textarea className="import-area" aria-label="持仓内容" placeholder={format === "csv" ? "symbol,quantity,avg_cost,market_value,sector,asset_type" : undefined} value={typeof content === "string" ? content : `[${fileName || "Excel 文件"}已加载]`} onChange={(event) => setContent(event.target.value)} readOnly={typeof content !== "string"} />
-      <span className="form-hint" role="status">{status || "填写持仓实际对应的日期。"}{demoDate && ` 演示行情日期为 ${demoDate}，请使用对应日期的测试持仓。`}</span>
+    </form>
+  </PortfolioDialog>;
+}
+
+function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
+  defaultDate: string;
+  onClose: () => void;
+  onImported: (snapshot: Record<string, unknown>, asOf: string) => void;
+}) {
+  const [source, setSource] = useState<"file" | "paste">("file");
+  const [pasteFormat, setPasteFormat] = useState<"csv" | "manual">("csv");
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+
+  return <PortfolioDialog title="批量导入持仓" pending={importing} onClose={onClose} wide>
+    <p className="portfolio-dialog-hint">导入会为所选日期保存一份完整快照，请包含该日期的全部持仓。</p>
+    <form onSubmit={async (event) => {
+      event.preventDefault();
+      if (importing) return;
+      const fields = new FormData(event.currentTarget);
+      const asOf = String(fields.get("as_of"));
+      setImporting(true);
+      setError("");
+      try {
+        let format: "csv" | "xlsx" | "manual" = pasteFormat;
+        let content: string | { encoding: "base64"; data: string };
+        if (source === "file") {
+          const file = fields.get("file");
+          if (!(file instanceof File) || !file.size) {
+            setError("请选择有内容的持仓文件。");
+            return;
+          }
+          const extension = file.name.toLowerCase().split(".").pop();
+          if (extension === "xlsx") {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            let binary = "";
+            const chunkSize = 0x8000;
+            for (let index = 0; index < bytes.length; index += chunkSize) {
+              binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+            }
+            format = "xlsx";
+            content = { encoding: "base64", data: btoa(binary) };
+          } else if (extension === "csv") {
+            format = "csv";
+            content = await file.text();
+          } else {
+            setError("请选择 CSV 或 Excel（.xlsx）文件。");
+            return;
+          }
+        } else {
+          content = String(fields.get("content")).trim();
+          if (!content) {
+            setError("请粘贴持仓数据。");
+            return;
+          }
+        }
+        const { portfolio } = await api.importPortfolio(format, content, asOf);
+        onImported(portfolio, asOf);
+      } catch (error) {
+        setError(friendlyError(error, "导入失败，请检查文件格式、持仓数据和日期。"));
+      } finally {
+        setImporting(false);
+      }
+    }}>
+      <fieldset className="runtime-fields position-fields" disabled={importing}>
+        <label>持仓日期<input name="as_of" type="date" defaultValue={defaultDate} max={shanghaiDate()} required /></label>
+        <div className="portfolio-import-sources" role="group" aria-label="导入方式">
+          <button type="button" aria-pressed={source === "file"} onClick={() => { setSource("file"); setError(""); }}>上传文件</button>
+          <button type="button" aria-pressed={source === "paste"} onClick={() => { setSource("paste"); setError(""); }}>粘贴数据</button>
+        </div>
+        {source === "file" ? <label>持仓文件（CSV 或 Excel）
+          <input name="file" type="file" accept=".csv,.xlsx" required />
+        </label> : <>
+          <label>数据格式<select value={pasteFormat} onChange={(event) => setPasteFormat(event.target.value as "csv" | "manual")}>
+            <option value="csv">CSV</option>
+            <option value="manual">JSON</option>
+          </select></label>
+          <label>持仓数据<textarea name="content" className="portfolio-import-content" required
+            placeholder={pasteFormat === "csv" ? "symbol,quantity,avg_cost,market_value" : undefined} /></label>
+        </>}
+      </fieldset>
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      <div className="runtime-dialog-actions">
+        <button type="button" className="quiet-button" disabled={importing} onClick={onClose}>取消</button>
+        <button className="primary-button" disabled={importing}>{importing ? "正在导入…" : "导入持仓"}</button>
+      </div>
+    </form>
+  </PortfolioDialog>;
+}
+
+function PortfolioView({ portfolio, demoDate, onChanged }: {
+  portfolio: Record<string, unknown> | null;
+  demoDate?: string;
+  onChanged: (snapshot?: Record<string, unknown>) => void;
+}) {
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const [editor, setEditor] = useState<PortfolioPositionDraft | "import" | null>(null);
+  const [status, setStatus] = useState("");
+  const snapshotId = portfolio?.source !== "fixture" && typeof portfolio?.snapshot_id === "string" ? portfolio.snapshot_id : null;
+  const snapshot = snapshotId ? portfolio : null;
+  const positions = (snapshot?.positions as Array<Record<string, unknown>> | undefined) ?? [];
+  const asOf = snapshot ? String(snapshot.as_of) : demoDate ?? shanghaiDate();
+  const totalValue = typeof snapshot?.total_value === "number" ? snapshot.total_value.toLocaleString() : "—";
+  const drawdown = typeof snapshot?.drawdown === "number" ? rulePercent(snapshot.drawdown) : "—";
+  const openEditor = (mode: PortfolioPositionDraft["mode"], position?: Record<string, unknown>, positionIndex?: number) => {
+    setStatus("");
+    setEditor({ snapshotId, asOf, mode, position, positionIndex });
+  };
+  const closeEditor = () => setEditor(null);
+
+  return <section className="control-grid portfolio-grid">
+    <Panel title="我的持仓" eyebrow={snapshot ? asOf : "暂无快照"} wide actions={
+      <div className="portfolio-actions">
+        <button type="button" className="quiet-button" onClick={() => { setStatus(""); setEditor("import"); }}>批量导入</button>
+        <button ref={addButtonRef} type="button" className="primary-button" disabled={!portfolio} onClick={() => openEditor("add")}>
+          <PlusIcon size={16} aria-hidden="true" />新增持仓
+        </button>
+      </div>
+    }>
+      {snapshot && <div className="snapshot-head compact">
+        <div><strong className="big-number">{totalValue}</strong><span>总市值</span></div>
+        <div><strong className="big-number">{drawdown}</strong><span>回撤</span></div>
+      </div>}
+      {positions.length > 0 ? <table className="portfolio-positions" aria-label="持仓列表">
+        <thead><tr>
+          <th scope="col">标的</th>
+          <th scope="col">数量</th>
+          <th scope="col" className="portfolio-position-detail">平均成本</th>
+          <th scope="col" className="portfolio-position-detail">市值</th>
+          <th scope="col" className="portfolio-position-weight">仓位</th>
+          <th scope="col">操作</th>
+        </tr></thead>
+        <tbody>{positions.map((position, index) => {
+          const symbol = String(position.symbol);
+          const sector = typeof position.sector === "string" && position.sector !== "unknown" ? position.sector : "";
+          return <tr key={`${symbol}-${index}`}>
+            <th scope="row"><strong>{symbol}</strong>{sector && <small>{sector}</small>}</th>
+            <td>{Number(position.quantity).toLocaleString()} {position.asset_type === "etf" ? "份" : "股"}</td>
+            <td className="portfolio-position-detail">{Number(position.avg_cost).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+            <td className="portfolio-position-detail">{Number(position.market_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+            <td className="portfolio-position-weight">{(Number(position.weight) * 100).toFixed(1)}%</td>
+            <td><div className="portfolio-row-actions">
+              <button className="text-button" type="button" aria-label={`编辑持仓 ${symbol}`} onClick={() => openEditor("edit", position, index)}>编辑</button>
+              <button className="text-button portfolio-delete" type="button" aria-label={`删除持仓 ${symbol}`} onClick={() => openEditor("delete", position, index)}>删除</button>
+            </div></td>
+          </tr>;
+        })}</tbody>
+      </table> : <p className="form-hint">{portfolio ? "暂无持仓。可以逐条新增，或导入持仓文件。" : "正在读取持仓快照。"}</p>}
+      <p className={status ? "form-hint portfolio-position-status" : undefined} role="status">{status}</p>
     </Panel>
+    {positions.length > 0 && <div className="portfolio-charts wide"><PortfolioCharts portfolio={snapshot} positions={positions} /></div>}
+    {editor === "import" && <PortfolioImportDialog defaultDate={demoDate ?? shanghaiDate()} onClose={closeEditor} onImported={(imported, intendedDate) => {
+      const importedDate = String(imported.as_of ?? "未知");
+      setStatus(importedDate === intendedDate
+        ? `已导入 ${importedDate} 的持仓快照。`
+        : `持仓快照已导入，服务返回的日期为 ${importedDate}，请核对。`);
+      closeEditor();
+      onChanged(!snapshot || importedDate >= asOf ? imported : undefined);
+    }} />}
+    {editor && editor !== "import" && <PortfolioPositionDialog draft={editor} onClose={closeEditor} onChanged={(saved) => {
+      if (saved) {
+        setStatus({ add: "持仓已添加。", edit: "持仓已更新。", delete: "持仓已删除。" }[editor.mode]);
+        if (editor.mode === "delete") requestAnimationFrame(() => addButtonRef.current?.focus());
+      }
+      onChanged(saved);
+    }} />}
   </section>;
 }
 
@@ -2307,8 +2518,10 @@ function DebateView({ debate }: { debate: Record<string, Record<string, unknown>
   })}</div>;
 }
 
-function Panel({ title, eyebrow, wide, children }: { title: string; eyebrow: string; wide?: boolean; children: ReactNode }) {
-  return <section className={`sub-panel ${wide ? "wide" : ""}`}><div className="panel-header"><div><span className="eyebrow">{eyebrow}</span><h3>{title}</h3></div></div>{children}</section>;
+function Panel({ title, eyebrow, wide, actions, children }: {
+  title: string; eyebrow: string; wide?: boolean; actions?: ReactNode; children: ReactNode;
+}) {
+  return <section className={`sub-panel ${wide ? "wide" : ""}`}><div className="panel-header"><div><span className="eyebrow">{eyebrow}</span><h3>{title}</h3></div>{actions}</div>{children}</section>;
 }
 
 const ruleReasonLabels: Record<string, string> = {

@@ -1,5 +1,17 @@
 # Findings & Decisions
 
+## Portfolio management and import (2026-11-22)
+
+- The previous bulk-import entry was a fragment link to an always-visible form. The new entry opens the form directly.
+- Fixture snapshots have no user position actions. The management table should show saved holdings only and keep the existing runtime fixture behavior for research.
+- A row's index and symbol identify it within an immutable snapshot revision, including legacy imports that contain the same symbol on more than one row.
+
+## Single-position entry (2026-11-22)
+
+- Bulk import persists a complete snapshot. The single-position write must merge against the latest user snapshot on the server and keep the historical revision available.
+- Desktop and Web share `PortfolioView`. The existing native dialog styling and risk-event pipeline cover the new flow.
+- Fixture snapshots should remain available for display and replay, while the form uses only the user's own positions for writes.
+
 ## 2026-11-09 Decision Journal Slice 1
 
 - The first Journal slice can reuse the current write model; a separate

@@ -349,6 +349,8 @@ export const api = {
     asOf?: string,
   ) =>
     contractClient.importPortfolio(format, content, asOf) as Promise<{ portfolio: Record<string, unknown> }>,
+  savePortfolioPosition: (payload: Parameters<typeof contractClient.savePortfolioPosition>[0]) =>
+    contractClient.savePortfolioPosition(payload),
   createTask: (input: TaskInput) => {
     const target: Record<string, unknown> = {
       as_of: input.asOf,

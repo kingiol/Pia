@@ -913,6 +913,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PortfolioResponse"
+  /api/portfolio/positions:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortfolioPositionRequest"
+      responses:
+        "201":
+          description: New snapshot revision saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioResponse"
+        "409":
+          description: The snapshot changed, the position already exists, or the position input is invalid
   /api/candidates:
     get:
       parameters:
@@ -1069,6 +1086,23 @@ components:
         format: {type: string, enum: [csv, xlsx, excel, manual]}
         content: {}
         as_of: {type: string, format: date, description: Holdings date. Defaults to today in Asia/Shanghai.}
+    PortfolioPositionRequest:
+      type: object
+      required: [snapshot_id, as_of, mode, symbol]
+      properties:
+        snapshot_id: {type: [string, "null"], description: Current user snapshot ID or null for the first position.}
+        as_of: {type: string, format: date}
+        mode: {type: string, enum: [add, edit, delete]}
+        symbol: {type: string, minLength: 1}
+        position_index: {type: integer, minimum: 0, description: Row index in the base snapshot to disambiguate repeated symbols.}
+        quantity: {type: number, exclusiveMinimum: 0}
+        avg_cost: {type: number, minimum: 0}
+        market_value: {type: number, minimum: 0}
+      if:
+        properties:
+          mode: {enum: [add, edit]}
+      then:
+        required: [quantity, avg_cost, market_value]
     InvestorProfile:
       $ref: "./schemas/profile.json"
     PortfolioSnapshot:

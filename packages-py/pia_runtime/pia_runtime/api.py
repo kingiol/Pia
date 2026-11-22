@@ -218,7 +218,10 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                         ),
                     })
                 if path == "/api/portfolio":
-                    snapshot = runtime.db.get_latest_portfolio_snapshot(self._user_id() or "default")
+                    user_id = self._user_id() or "default"
+                    snapshot = runtime.db.get_latest_portfolio_snapshot(user_id, include_fixture=False)
+                    if snapshot is None:
+                        snapshot = runtime.db.get_latest_portfolio_snapshot(user_id)
                     return self._send(200, snapshot or {"status": "unavailable"})
                 if path == "/api/market":
                     detail = runtime.db.fetchone(
@@ -498,6 +501,27 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                         body.get("content", []),
                         user_id=self._user_id() or "default",
                         as_of=body.get("as_of"),
+                    )})
+                if path == "/api/portfolio/positions":
+                    required = ["snapshot_id", "as_of", "mode", "symbol"]
+                    if body.get("mode") != "delete":
+                        required.extend(("quantity", "avg_cost", "market_value"))
+                    validate_schema(body, {
+                        "type": "object",
+                        "required": required,
+                        "properties": {
+                            "snapshot_id": {"type": ["string", "null"]},
+                            "as_of": {"type": "string", "format": "date"},
+                            "mode": {"type": "string", "enum": ["add", "edit", "delete"]},
+                            "symbol": {"type": "string", "minLength": 1},
+                            "position_index": {"type": "integer", "minimum": 0},
+                            "quantity": {"type": "number", "minimum": 0},
+                            "avg_cost": {"type": "number", "minimum": 0},
+                            "market_value": {"type": "number", "minimum": 0},
+                        },
+                    })
+                    return self._send(201, {"portfolio": runtime.save_portfolio_position(
+                        body, user_id=self._user_id() or "default",
                     )})
                 if path == "/api/profile":
                     payload = body.get("payload", body)

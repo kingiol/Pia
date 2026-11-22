@@ -624,6 +624,18 @@ export class PiaApiClient {
     });
   }
 
+  savePortfolioPosition(payload: {
+    snapshot_id: string | null;
+    as_of: string;
+    symbol: string;
+    position_index?: number;
+  } & ({ mode: "delete" } | { mode: "add" | "edit"; quantity: number; avg_cost: number; market_value: number })): Promise<{ portfolio: PortfolioSnapshot }> {
+    return this.request("/portfolio/positions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
   updateProfile(payload: InvestorProfile["payload"]): Promise<InvestorProfile> {
     return this.request("/profile", {
       method: "POST",

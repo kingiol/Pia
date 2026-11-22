@@ -70,10 +70,20 @@ def parse_xlsx(content: bytes) -> dict[str, Any]:
         for row in root.findall(".//{*}row"):
             values = []
             for cell in row.findall("{*}c"):
+                reference = cell.get("r", "").rstrip("0123456789")
+                if len(reference) > 3 or any(not "A" <= letter <= "Z" for letter in reference):
+                    raise ValueError("Invalid Excel cell reference")
+                column = 0
+                for letter in reference:
+                    column = column * 26 + ord(letter) - ord("A") + 1
+                if column > len(values) + 1:
+                    values.extend([""] * (column - len(values) - 1))
                 value = cell.find("{*}v")
                 raw = value.text if value is not None and value.text else ""
                 if cell.attrib.get("t") == "s" and raw:
                     raw = shared[int(raw)]
+                elif cell.attrib.get("t") == "inlineStr":
+                    raw = "".join(part.text or "" for part in cell.findall(".//{*}t"))
                 values.append(raw)
             rows.append(values)
     if not rows:

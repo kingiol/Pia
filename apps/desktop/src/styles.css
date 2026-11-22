@@ -241,7 +241,6 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .empty-mark { display: grid; place-items: center; width: 32px; height: 32px; color: var(--line-strong); font-size: 24px; }
 .single-panel, .notifications-panel { min-height: 300px; }
 .control-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 24px; }
-.portfolio-grid .chart-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .snapshot-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .snapshot-head > div { min-width: 0; padding: 20px 16px; }
 .snapshot-head > div + div { border-left: 1px solid var(--line); }
@@ -274,6 +273,17 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .data-row span { color: var(--muted); }
 .data-row .up { color: var(--accent); text-align: right; }
 .data-row .down { color: var(--danger); text-align: right; }
+.portfolio-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.portfolio-positions { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.portfolio-positions th, .portfolio-positions td { padding: 10px 16px; border-top: 1px solid var(--line); }
+.portfolio-positions thead th { color: var(--muted); font-size: 12px; font-weight: 500; background: var(--surface-alt); }
+.portfolio-positions tbody th { overflow-wrap: anywhere; }
+.portfolio-positions tbody th small { display: block; margin-top: 2px; color: var(--muted); font-weight: 400; }
+.portfolio-positions td { font-variant-numeric: tabular-nums; }
+.portfolio-row-actions { display: flex; gap: 12px; }
+.portfolio-row-actions button { min-height: 36px; white-space: nowrap; }
+.text-button.portfolio-delete { color: var(--danger); }
+.form-hint.portfolio-position-status { color: var(--accent); }
 .candidate-row { grid-template-columns: minmax(100px, 1fr) minmax(0, 1fr) auto auto; }
 .watchlist-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
 .watchlist-row > div:first-child { display: grid; gap: 4px; overflow-wrap: anywhere; }
@@ -453,6 +463,16 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .runtime-fields { display: grid; gap: 8px; margin-top: 24px; }
 .runtime-fields label { color: var(--secondary); font-size: 13px; }
 .runtime-fields input + label { margin-top: 8px; }
+.position-fields { min-width: 0; padding: 0; border: 0; gap: 12px; }
+.position-fields label { display: grid; gap: 4px; }
+.position-fields input:read-only { background: var(--surface-alt); }
+.position-fields small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.portfolio-dialog-hint { margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.portfolio-import-dialog { width: min(520px, calc(100% - 32px)); }
+.portfolio-import-sources { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-alt); }
+.portfolio-import-sources button { flex: 1; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--secondary); font-size: 13px; }
+.portfolio-import-sources button[aria-pressed="true"] { border-color: var(--line); background: var(--surface); color: var(--accent); }
+.portfolio-import-content { min-height: 120px; resize: vertical; font: 12px/20px var(--mono); }
 .runtime-starting, .runtime-error { margin: 8px 8px 0; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .runtime-error { color: var(--danger); }
 
@@ -595,6 +615,8 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
   .rule-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
+  .portfolio-positions th, .portfolio-positions td { padding: 8px 12px; }
+  .portfolio-positions .portfolio-position-detail { display: none; }
   .shell { height: auto; min-height: 100dvh; overflow: visible; display: block; }
   .sidebar { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: space-between; width: 100%; overflow: visible; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
   .brand { justify-content: flex-start; padding: 0; }
@@ -659,6 +681,7 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
   .auth-panel { padding: 24px; }
 }
 @media (max-width: 380px) {
+  .portfolio-positions .portfolio-position-weight { display: none; }
   .setup-steps { grid-template-columns: minmax(0, 1fr); }
   .setup-step { grid-template-columns: 24px minmax(0, 1fr) auto; }
   .setup-step b { grid-column: 3; align-self: center; }

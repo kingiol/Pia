@@ -1,5 +1,21 @@
 # Task Plan: Pia Full Local + Cloud Implementation
 
+## Portfolio management and import (2026-11-22)
+
+- Goal: give the shared Desktop/Web Portfolio view one working bulk-import entry and visible edit and delete actions on each saved position.
+- Scope: an import dialog for files or pasted data, a responsive holdings table, and deletion that writes a new snapshot revision, including an empty portfolio when the last row is deleted.
+- Acceptance: CSV, XLSX and manual JSON remain available, real holdings have explicit actions, demo holdings cannot be mistaken for saved positions, and canceling or a concurrent revision prevents an unintended deletion.
+- Verification: exercise import, edit, cancel and delete in the browser with disposable data, run runtime and build checks, then commit the complete change.
+- Status: complete. Verified file and paste imports, edit, delete, cancellation, empty snapshots, and row actions at 375 px. Built the macOS app package.
+
+## Single-position entry (2026-11-22)
+
+- Goal: add or edit one holding in the shared Desktop/Web Portfolio view.
+- Scope: a short form, duplicate detection, and a user-scoped write that appends a snapshot revision while preserving the other holdings. Keep bulk import available.
+- Acceptance: first entry, subsequent entry, and editing work end to end. The form displays the snapshot date. Concurrent revisions cannot silently overwrite the displayed holdings, and existing research keeps its snapshot.
+- Verification: portfolio runtime regression, contract generation, frontend build, and a local browser walkthrough with isolated fixture data.
+- Status: complete. Verified revision conflicts on PostgreSQL and exercised the add, edit, duplicate, reload, and CSV flows in the built Web app.
+
 ## Active UX redesign phase (2026-11-08)
 
 ### Goal
