@@ -141,14 +141,9 @@ fn spawn_runtime(app: &tauri::AppHandle, channel: &str) -> Result<RuntimeChild, 
         .stderr(Stdio::inherit());
     let mut process = command.spawn().map_err(|error| error.to_string())?;
     #[cfg(windows)]
-    let job = match windows_job::attach(job, process.id()) {
-        Ok(job) => job,
-        Err(error) => {
-            let _ = process.kill();
-            let _ = process.wait();
-            return Err(error.to_string());
-        }
-    };
+    {
+        process = windows_job::attach(&job, process).map_err(|error| error.to_string())?;
+    }
     let stdout = process.stdout.take().expect("runtime stdout is piped");
     let mut child = RuntimeChild {
         process,
