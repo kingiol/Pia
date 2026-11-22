@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,6 +24,28 @@ from pia_runtime.runtime import PiaRuntime
 
 
 class RuntimeTest(unittest.TestCase):
+    def test_watchlist_append_preserves_symbols_and_is_user_scoped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = PiaRuntime(Settings(db_path=Path(directory) / "pia.sqlite3", autostart_tasks=False))
+            try:
+                initial = runtime.save_watchlist("Research watchlist", ["000001.SZ"], "alice")
+                barrier = threading.Barrier(2)
+
+                def add(symbol: str):
+                    barrier.wait(timeout=5)
+                    return runtime.save_watchlist("Research watchlist", [symbol], "alice", append=True)
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    list(executor.map(add, ["600000.SH", "510300.SH"]))
+                updated = runtime.save_watchlist("Research watchlist", ["600000.sh"], "alice", append=True)
+                self.assertEqual(updated["id"], initial["id"])
+                self.assertEqual(updated["symbols"], ["000001.SZ", "510300.SH", "600000.SH"])
+                self.assertEqual(runtime.list_watchlists("bob"), [])
+                edited = runtime.save_watchlist("Research watchlist", ["000001.SZ"], "alice")
+                self.assertEqual(edited["symbols"], ["000001.SZ"])
+            finally:
+                runtime.close()
+
     def cloud_policy_runtime(self, settings):
         # Unit-test Cloud task policies locally; PostgreSQL storage has integration tests.
         settings.mode = "local"

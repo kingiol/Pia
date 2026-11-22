@@ -190,6 +190,8 @@ export type RulesResponse = {
 };
 export type CandidateListResponse = {
   candidates: Array<Record<string, unknown>>;
+  as_of?: string;
+  source?: string;
   scan_id?: string;
   strategy_id?: string;
   strategy_version?: string;
@@ -521,8 +523,8 @@ export class PiaApiClient {
     return this.request("/watchlists");
   }
 
-  saveWatchlist(name: string, symbols: string[]): Promise<Watchlist> {
-    return this.request("/watchlists", {
+  saveWatchlist(name: string, symbols: string[], append = false): Promise<Watchlist> {
+    return this.request(append ? "/watchlists/append" : "/watchlists", {
       method: "POST",
       body: JSON.stringify({ name, symbols }),
     });

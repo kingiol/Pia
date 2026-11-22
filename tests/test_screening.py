@@ -25,6 +25,10 @@ class ScreeningTest(unittest.TestCase):
             self.assertEqual(round(sum(factor["contribution"] for factor in row["factors"]), 4), row["score"])
         self.runtime.update_profile({"universe": ["nonexistent"]})
         self.assertEqual(self.runtime.candidate_scan(result["scan_id"], replay=True), result)
+        empty = self.runtime.scan_candidates()
+        self.assertEqual((empty["as_of"], empty["source"], empty["candidates"]), ("2026-11-05", "fixture", []))
+        self.assertEqual(len(empty["excluded"]), len(market["instruments"]))
+        self.assertTrue(all("PROFILE_UNIVERSE" in row["reason_codes"] for row in empty["excluded"]))
         with self.assertRaises(KeyError):
             self.runtime.candidate_scan(result["scan_id"], "other")
 

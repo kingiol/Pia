@@ -1,5 +1,12 @@
 # Progress Log
 
+## 2026-11-22: Candidate discovery and watchlists
+
+- Removed candidate scans from the workspace-wide refresh and put discovery first in Market. Added data, retry, and exclusion states and source metadata on scan results.
+- Added server-side, user-scoped append for watchlist entries and kept full-list editing available.
+- Verified in the browser that live mode with only a demo snapshot links to Data, a failed demo scan can recover, zero matches show localized exclusions, and saved candidates appear in Watchlist. Checked navigation at 375 px.
+- Passed 283 Python test cases (7 skipped), 11 desktop tests, TypeScript, contract checks, concurrent appends across two PostgreSQL connections, and the macOS app build.
+
 ## 2026-11-22: Portfolio management and import
 
 - Replaced the fragment link and inline form with one import dialog. Added visible row actions for editing and deleting saved holdings.

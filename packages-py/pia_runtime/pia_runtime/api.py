@@ -536,7 +536,7 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                         },
                     })
                     return self._send(201, runtime.update_profile(payload, self._user_id() or "default"))
-                if path == "/api/watchlists":
+                if path in {"/api/watchlists", "/api/watchlists/append"}:
                     validate_schema(body, {
                         "type": "object",
                         "required": ["name", "symbols"],
@@ -549,6 +549,7 @@ def serve(runtime: PiaRuntime, host: str, port: int, auth_token: str | None = No
                         body["name"],
                         body["symbols"],
                         self._user_id() or "default",
+                        append=path == "/api/watchlists/append",
                     ))
                 if path == "/api/journal/memory-candidates":
                     validate_schema(body, {

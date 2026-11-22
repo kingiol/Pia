@@ -652,9 +652,17 @@ class PiaRuntime:
         name: str,
         symbols: list[str],
         user_id: str = "default",
+        *,
+        append: bool = False,
     ) -> dict[str, Any]:
-        self.db.user_seed(user_id)
-        return self.db.save_watchlist(name, symbols, user_id)
+        with self._user_write(user_id):
+            if append:
+                existing = next(
+                    (item["symbols"] for item in self.db.list_watchlists(user_id) if item["name"] == name.strip()),
+                    [],
+                )
+                symbols = [*existing, *symbols]
+            return self.db.save_watchlist(name, symbols, user_id)
 
     def save_memory(
         self,
@@ -1360,19 +1368,11 @@ class PiaRuntime:
             symbol = str(task.target.get("symbol") or "").strip().upper()
             if not symbol:
                 raise ValueError("cannot mark a task without a symbol as watch")
-            existing = next(
-                (
-                    item
-                    for item in self.db.list_watchlists(user_id)
-                    if item["name"] == "Research watchlist"
-                ),
-                None,
-            )
-            symbols = list(existing["symbols"]) if existing else []
             watchlist = self.save_watchlist(
                 "Research watchlist",
-                [*symbols, symbol],
+                [symbol],
                 user_id,
+                append=True,
             )
             result["watchlist"] = watchlist
             self.db.audit(
@@ -1407,7 +1407,7 @@ class PiaRuntime:
         return self.events.ingest(event_type, payload, dedupe_key, user_id=user_id)
 
     @contextmanager
-    def _portfolio_write(self, user_id: str):
+    def _user_write(self, user_id: str):
         with self.db.transaction():
             self.db.user_seed(user_id)
             if isinstance(self.db, PostgresDatabase):
@@ -1426,7 +1426,7 @@ class PiaRuntime:
         if as_of is not None and (date.fromisoformat(as_of).isoformat() != as_of or as_of > today):
             raise ValueError("Portfolio date must be YYYY-MM-DD and no later than today")
         snapshot = parse_portfolio(format_name, content)
-        with self._portfolio_write(user_id):
+        with self._user_write(user_id):
             snapshot.update(user_id=user_id, as_of=as_of or today, observed_at=now_iso())
             previous = (
                 self.db.get_latest_portfolio_snapshot(user_id, as_of=today, include_fixture=False)
@@ -1450,7 +1450,7 @@ class PiaRuntime:
         if date.fromisoformat(as_of).isoformat() != as_of or as_of > today:
             raise ValueError("Portfolio date must be YYYY-MM-DD and no later than today")
 
-        with self._portfolio_write(user_id):
+        with self._user_write(user_id):
             base = self.db.get_latest_portfolio_snapshot(user_id, include_fixture=False) or {}
             if base.get("snapshot_id") != payload["snapshot_id"]:
                 raise ValueError("PORTFOLIO_CHANGED")
@@ -1583,7 +1583,10 @@ class PiaRuntime:
                 self._provider_context.user_id = previous_scope
         profile_payload = self._profile_payload(user_id)
         rules, _ = self._rules_for_user(user_id)
-        result = execute_scan(manifest, market, profile_payload, rules) | {"user_id": user_id}
+        result = execute_scan(manifest, market, profile_payload, rules) | {
+            "user_id": user_id,
+            "source": market["source"],
+        }
         if persist:
             scan_id = new_id("scan")
             frozen = sanitize_context({"market": market, "profile": profile_payload, "rules": rules})

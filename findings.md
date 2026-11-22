@@ -1,5 +1,11 @@
 # Findings & Decisions
 
+## Candidate discovery and watchlists (2026-11-22)
+
+- The global refresh fetched default candidates independently of explicit scans in Market. Both successful and failed empty responses reached Watchlist as an empty array.
+- Market previously hid scanning controls when no snapshot had been persisted. Fixture mode can scan its known demo data even in a fresh workspace.
+- Watchlist persistence replaces the full list identified by the user's list name. Adding symbols must merge with saved symbols, while editing can explicitly replace the list.
+
 ## Portfolio management and import (2026-11-22)
 
 - The previous bulk-import entry was a fragment link to an always-visible form. The new entry opens the form directly.

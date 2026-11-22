@@ -292,6 +292,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Watchlist"
+  /api/watchlists/append:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchlistInput"
+      responses:
+        "201":
+          description: Watchlist with the new and previously saved symbols
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Watchlist"
   /api/memory:
     get:
       parameters:
@@ -1694,6 +1709,7 @@ components:
         strategy_version: {type: string}
         strategy_hash: {type: string}
         as_of: {type: string}
+        source: {type: string, description: Source of the market snapshot used by the scan.}
         excluded:
           type: array
           items: {type: object, additionalProperties: true}

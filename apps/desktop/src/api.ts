@@ -1,5 +1,5 @@
 import { PiaApiClient } from "../../../packages/contracts/generated/typescript/client";
-export type { LocalCredentialStatus } from "../../../packages/contracts/generated/typescript/client";
+export type { CandidateListResponse, LocalCredentialStatus } from "../../../packages/contracts/generated/typescript/client";
 import type { DeviceRegistration } from "../../../packages/contracts/generated/typescript/models";
 import type { ResultMetadata } from "../../../packages/contracts/generated/typescript/models";
 import type {
@@ -321,8 +321,8 @@ export const api = {
   audit: () => contractClient.audit() as Promise<{ audit: Array<Record<string, string>> }>,
   notifications: () => contractClient.notifications(),
   watchlists: () => contractClient.watchlists(),
-  saveWatchlist: (name: string, symbols: string[]) =>
-    contractClient.saveWatchlist(name, symbols),
+  saveWatchlist: (name: string, symbols: string[], append?: boolean) =>
+    contractClient.saveWatchlist(name, symbols, append),
   searchMemory: (query = "", symbol?: string, limit = 50) =>
     contractClient.searchMemory(query, symbol, limit),
   saveMemory: (payload: {

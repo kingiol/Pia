@@ -28,7 +28,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { api, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
-import type { LocalCredentialStatus, RuleReason } from "./api";
+import type { CandidateListResponse, LocalCredentialStatus, RuleReason } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
 import { researchAgentLabel } from "./researchLabels";
@@ -46,6 +46,8 @@ const nav = [
   ["审计", "Audit", "audit"],
   ["通知", "Notifications", "notifications"],
 ] as const;
+
+const DEFAULT_WATCHLIST = "Research watchlist";
 
 const webRoutes: Record<string, string> = {
   Overview: "/overview",
@@ -296,7 +298,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   const [market, setMarket] = useState<Record<string, unknown> | null>(null);
   const [portfolio, setPortfolio] = useState<Record<string, unknown> | null>(null);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
-  const [candidates, setCandidates] = useState<Array<Record<string, unknown>>>([]);
+  const [candidateScan, setCandidateScan] = useState<{ key: string; result: CandidateListResponse } | null>(null);
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [journalItems, setJournalItems] = useState<JournalItem[]>([]);
   const [journalSummary, setJournalSummary] = useState<JournalSummary | null>(null);
@@ -421,20 +423,6 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       setUnreadNotifications(nextNotifications.filter((item) => !item.read_at).length);
       setError(null);
       if (!selectedTaskRef.current && taskResult.tasks[0]) selectTask(taskResult.tasks[0].id);
-      const currentTaskInput = taskInput(healthResult, marketResult);
-      try {
-        const candidateResult = await api.candidates(
-          currentTaskInput.asOf,
-          currentTaskInput.fixture?.market,
-        );
-        setCandidates(candidateResult.candidates);
-      } catch (candidateError) {
-        setCandidates([]);
-        const message = friendlyError(candidateError, "候选扫描失败");
-        setError(message === "所需数据暂不可用，请检查数据源后重试。"
-          ? "候选扫描所需的行情暂不可用，请检查数据源和网络，稍后重试。已有快照不代表最新行情。"
-          : message);
-      }
     } catch (requestError) {
       const message = friendlyError(requestError, "无法连接运行时");
       if (/云端工作区需要重新连接|unauthorized|401/i.test(message)) setAuthRequired(true);
@@ -697,17 +685,9 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     }
   };
 
-  const saveWatchlist = async (name: string, symbols: string[]) => {
-    setBusy(true);
-    try {
-      await api.saveWatchlist(name, symbols);
-      setWatchlists((await api.watchlists()).watchlists);
-      setError(null);
-    } catch (requestError) {
-      setError(friendlyError(requestError, "保存关注列表失败"));
-    } finally {
-      setBusy(false);
-    }
+  const saveWatchlist = async (name: string, symbols: string[], append: boolean) => {
+    const saved = await api.saveWatchlist(name, symbols, append);
+    setWatchlists((lists) => [saved, ...lists.filter((list) => list.id !== saved.id)]);
   };
 
   const saveJournalCandidate = async (candidateKey: string) => {
@@ -897,6 +877,11 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   const isResearchWorkspace = view === "Overview" || view === "Research";
   const showMobileDetail = Boolean(selectedId && mobileDetailOpen && isResearchWorkspace);
   const showWindowTitlebar = isTauriRuntime() && navigator.userAgent.includes("Macintosh");
+  const scanKey = JSON.stringify([health?.provider?.provider_id, market?.snapshot_id, market?.quality, profile?.id, rules?.version]);
+  const openMarketCandidates = () => {
+    setView("Market");
+    window.requestAnimationFrame(() => document.getElementById("market-candidates")?.focus());
+  };
   return (
     <div className={`shell${showWindowTitlebar ? " shell--macos" : ""}`}>
       {showWindowTitlebar && <>
@@ -974,8 +959,14 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         </section>}
 
         {view === "Journal" ? <JournalView items={journalItems} summary={journalSummary} patterns={journalPatterns} onSaveCandidate={(candidateKey) => void saveJournalCandidate(candidateKey)} onReviewCandidate={(candidateId, payload) => void reviewJournalCandidate(candidateId, payload)} onFeedbackCandidate={(candidateId, usageId, rating) => void feedbackJournalCandidate(candidateId, usageId, rating)} onOpenTask={(taskId) => { openResearch(taskId); setView("Research"); }} /> :
-          view === "Market" ? <MarketView market={market} candidates={candidates} onResearch={(symbol) => void createResearch(symbol)} onWatch={(symbol) => void saveWatchlist("Research watchlist", [symbol, ...(watchlists.find((list) => list.name === "Research watchlist")?.symbols ?? [])])} /> :
-          view === "Watchlist" ? <WatchlistView watchlists={watchlists} candidates={candidates} onSaved={(name, symbols) => void saveWatchlist(name, symbols)} onResearch={(symbol) => void createResearch(symbol)} /> :
+          view === "Market" ? <MarketView key={scanKey} market={market} demo={health?.provider?.provider_id === "fixture"}
+            pending={market === null && error === null} savedScan={candidateScan?.key === scanKey ? candidateScan.result : null}
+            onScanned={(result) => setCandidateScan({ key: scanKey, result })}
+            watchlists={watchlists} onResearch={(symbol) => void createResearch(symbol)}
+            onWatch={(symbol) => saveWatchlist(DEFAULT_WATCHLIST, [symbol], true)}
+            onOpenData={() => setView("Data Health")} /> :
+          view === "Watchlist" ? <WatchlistView watchlists={watchlists} onSaved={saveWatchlist}
+            onResearch={(symbol) => void createResearch(symbol)} onOpenMarket={openMarketCandidates} /> :
           view === "Portfolio" ? <PortfolioView portfolio={portfolio} demoDate={health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : undefined} onChanged={(snapshot) => {
             if (snapshot) setPortfolio(snapshot);
             void refresh();
@@ -1486,48 +1477,89 @@ function TaskQueue({ tasks, selectedId, onSelect, onOpen }: {
   })}</div>;
 }
 
-function WatchlistView({ watchlists, candidates, onSaved, onResearch }: {
+function watchlistName(name: string) {
+  return name === DEFAULT_WATCHLIST ? "研究自选" : name;
+}
+
+function WatchlistView({ watchlists, onSaved, onResearch, onOpenMarket }: {
   watchlists: Watchlist[];
-  candidates: Array<Record<string, unknown>>;
-  onSaved: (name: string, symbols: string[]) => void;
+  onSaved: (name: string, symbols: string[], append: boolean) => Promise<void>;
   onResearch: (symbol: string) => void;
+  onOpenMarket: () => void;
 }) {
-  const [name, setName] = useState("Research watchlist");
-  const [symbols, setSymbols] = useState("");
+  const [editor, setEditor] = useState<Watchlist | "add" | null>(null);
+  const [listName, setListName] = useState(DEFAULT_WATCHLIST);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [status, setStatus] = useState("");
-  const save = () => {
-    const values = symbols.split(/[,\s]+/).map((value) => value.trim().toUpperCase()).filter(Boolean);
-    if (!values.length) {
-      setStatus("至少添加一个标的");
-      return;
-    }
-    onSaved(name, values);
-    setSymbols("");
-    setStatus("自选列表已保存");
+  const editing = editor && editor !== "add" ? editor : null;
+
+  const openEditor = (list: Watchlist | "add") => {
+    setEditor(list);
+    setListName(list === "add" ? DEFAULT_WATCHLIST : list.name);
+    setError("");
+    setStatus("");
   };
+  const closeEditor = () => setEditor(null);
+
   return <section className="control-grid">
-    <Panel title="自选列表" eyebrow="按用户保存的标的">
-      <div className="form-row">
-        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="自选列表名称" />
-        <input value={symbols} onChange={(event) => setSymbols(event.target.value)} placeholder="600000.SH, 510300.SH" />
-        <button className="primary-button" onClick={save}>保存</button>
+    <Panel title="自选列表" wide actions={
+      <div className="workspace-actions">
+        <button className="quiet-button" type="button" onClick={onOpenMarket}>查看市场候选</button>
+        <button className="primary-button" type="button" onClick={() => openEditor("add")}><PlusIcon size={16} aria-hidden="true" />添加自选</button>
       </div>
-      <span className="form-hint">{status || "自选列表会按用户分别保存。"}</span>
-      {watchlists.length === 0 ? <EmptyState message="还没有关注列表。" /> :
+    }>
+      {watchlists.length === 0 ? <EmptyState message="还没有自选标的。" /> :
         <div className="watchlist-list">{watchlists.map((watchlist) => <article className="watchlist-row" key={watchlist.id}>
-          <div><strong>{watchlist.name}</strong><span>{watchlist.symbols.length} 个标的</span></div>
-          <div className="watchlist-symbols">{watchlist.symbols.map((symbol) => <button className="quiet-button" key={symbol} onClick={() => onResearch(symbol)}>{symbol}</button>)}</div>
+          <div><strong>{watchlistName(watchlist.name)}</strong><span>{watchlist.symbols.length} 个标的</span></div>
+          <div className="watchlist-symbols">{watchlist.symbols.map((symbol) => <button className="quiet-button" key={symbol}
+            title={`研究 ${symbol}`} onClick={() => onResearch(symbol)}>{symbol}</button>)}</div>
+          <button className="text-button watchlist-edit" type="button" aria-label={`编辑${watchlistName(watchlist.name)}列表`} onClick={() => openEditor(watchlist)}>编辑列表</button>
         </article>)}</div>}
+      {status && <p className="form-hint" role="status">{status}</p>}
     </Panel>
-    <Panel title="候选快捷操作" eyebrow="从排序扫描结果添加">
-      {candidates.length === 0 ? <EmptyState message="暂无候选。" /> :
-        <div className="data-table">{candidates.slice(0, 12).map((candidate) => <div className="data-row" key={String(candidate.symbol)}>
-          <strong>{String(candidate.symbol)}</strong><span>{String(candidate.name)}</span><button className="quiet-button" onClick={() => {
-            const existing = watchlists.find((watchlist) => watchlist.name === name)?.symbols ?? [];
-            onSaved(name, [String(candidate.symbol), ...existing]);
-          }}>加入</button>
-        </div>)}</div>}
-    </Panel>
+    {editor && <WorkspaceDialog title={editing ? "编辑自选列表" : "添加自选"} pending={saving} onClose={closeEditor}>
+      <form onSubmit={async (event) => {
+        event.preventDefault();
+        if (saving) return;
+        const fields = new FormData(event.currentTarget);
+        const name = listName || String(fields.get("list_name") ?? "").trim();
+        const symbols = String(fields.get("symbols") ?? "").toUpperCase().split(/[,，\s]+/).filter(Boolean);
+        if (!name || symbols.length === 0) {
+          setError("请填写列表名称和至少一个标的代码。");
+          return;
+        }
+        setSaving(true);
+        setError("");
+        try {
+          await onSaved(name, symbols, !editing);
+          setStatus(editing ? "自选列表已更新。" : `已加入「${watchlistName(name)}」。`);
+          closeEditor();
+        } catch (requestError) {
+          setError(friendlyError(requestError, "保存自选失败，请重试。"));
+        } finally {
+          setSaving(false);
+        }
+      }}>
+        <fieldset className="runtime-fields dialog-fields" disabled={saving}>
+          {editing ? <label>列表<input value={watchlistName(editing.name)} readOnly /></label> :
+            <label>加入列表<select value={listName} onChange={(event) => setListName(event.target.value)}>
+              <option value={DEFAULT_WATCHLIST}>{watchlistName(DEFAULT_WATCHLIST)}</option>
+              {watchlists.filter((list) => list.name !== DEFAULT_WATCHLIST).map((list) => <option key={list.id} value={list.name}>{list.name}</option>)}
+              <option value="">新建列表</option>
+            </select></label>}
+          {!listName && <label>列表名称<input name="list_name" required /></label>}
+          <label>股票或 ETF 代码<textarea name="symbols" rows={3} required defaultValue={editing?.symbols.join(", ") ?? ""}
+            placeholder="600000.SH, 510300.SH" /></label>
+          <small>多个代码可用逗号或空格分隔。</small>
+        </fieldset>
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        <div className="runtime-dialog-actions">
+          <button className="quiet-button" type="button" onClick={closeEditor} disabled={saving}>取消</button>
+          <button className="primary-button" disabled={saving}>{saving ? "正在保存…" : editing ? "保存列表" : "加入自选"}</button>
+        </div>
+      </form>
+    </WorkspaceDialog>}
   </section>;
 }
 
@@ -1630,79 +1662,217 @@ function AgentTimelineChart({ trace, asOf, source }: {
   </ChartFrame>;
 }
 
-function MarketView({ market, candidates, onResearch, onWatch }: { market: Record<string, unknown> | null; candidates: Array<Record<string, unknown>>; onResearch: (symbol: string) => void; onWatch: (symbol: string) => void }) {
-  const [strategies, setStrategies] = useState<Array<{ strategy_id: string; version: string }>>([]);
-  const [strategy, setStrategy] = useState("legacy_momentum_v1@1.0.0");
-  const [scan, setScan] = useState<{ candidates: Array<Record<string, unknown>>; scan_id?: string; excluded?: Array<Record<string, unknown>> } | null>(null);
-  const [scanBusy, setScanBusy] = useState(false);
+const DEFAULT_SCAN_STRATEGY = { strategy_id: "legacy_momentum_v1", version: "1.0.0" };
+const scanSourceLabels = { fixture: "演示行情", akshare: "AKShare", tushare: "Tushare" };
+const scanExclusionLabels: Record<string, string> = {
+  INELIGIBLE_INSTRUMENT: "ST、停牌或退市风险",
+  PROFILE_ASSET_TYPE: "超出投资设置的资产范围",
+  PROFILE_UNIVERSE: "超出投资设置的市场范围",
+  RULE_NEW_LISTING: "上市时间未达规则要求",
+  RULE_LIQUIDITY: "成交额未达规则要求",
+  MISSING_AVERAGE_TURNOVER: "缺少平均成交额",
+  MISSING_CHANGE_PCT: "缺少涨跌幅",
+  MISSING_BREADTH: "缺少市场宽度",
+  MISSING_LISTED_DAYS: "缺少上市天数",
+};
+
+type MarketCandidatesProps = {
+  asOf: string | undefined;
+  source: string | undefined;
+  fixture: string | undefined;
+  pending: boolean;
+  savedScan: CandidateListResponse | null;
+  watchlists: Watchlist[];
+  onScanned: (result: CandidateListResponse) => void;
+  onWatch: (symbol: string) => Promise<void>;
+  onResearch: (symbol: string) => void;
+  onOpenData: () => void;
+};
+
+function MarketCandidates({ asOf, source, fixture, pending, savedScan, watchlists, onScanned, onWatch, onResearch, onOpenData }: MarketCandidatesProps) {
+  const [strategies, setStrategies] = useState([DEFAULT_SCAN_STRATEGY]);
+  const [strategy, setStrategy] = useState(() => {
+    const id = savedScan?.strategy_id ?? DEFAULT_SCAN_STRATEGY.strategy_id;
+    const version = savedScan?.strategy_version ?? DEFAULT_SCAN_STRATEGY.version;
+    return `${id}@${version}`;
+  });
+  const [scan, setScan] = useState(savedScan);
+  const [scanBusy, setScanBusy] = useState(Boolean(asOf && !savedScan));
   const [scanError, setScanError] = useState("");
-  useEffect(() => { void api.screeningStrategies().then((result) => setStrategies(result.strategies)).catch(() => setScanError("策略暂不可用")); }, []);
+  const [failedReplay, setFailedReplay] = useState(false);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [savingSymbol, setSavingSymbol] = useState("");
+  const [watchError, setWatchError] = useState("");
+
+  useEffect(() => {
+    if (!asOf) return;
+    let cancelled = false;
+    void api.screeningStrategies().then(({ strategies }) => {
+      if (!cancelled && strategies.length > 0) setStrategies(strategies);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [asOf]);
+
+  useEffect(() => {
+    if (!asOf || savedScan) return;
+    let cancelled = false;
+    void api.candidates(asOf, fixture).then((result) => {
+      if (!cancelled) setScan(result);
+    }).catch((error) => {
+      if (!cancelled) setScanError(friendlyError(error, "请检查数据源或稍后重试。"));
+    }).finally(() => {
+      if (!cancelled) setScanBusy(false);
+    });
+    return () => { cancelled = true; };
+  }, [asOf, fixture, savedScan]);
+
   const executeScan = async (replay = false) => {
+    if (!asOf || scanBusy) return;
     setScanBusy(true);
+    setScanError("");
+    setShowExcluded(false);
     try {
       const [id, version] = strategy.split("@");
       const result = replay && scan?.scan_id ? await api.replayCandidateScan(scan.scan_id)
-        : await api.createCandidateScan(String(market?.as_of ?? "2026-11-05"), id, version);
+        : await api.createCandidateScan(asOf, id, version, fixture);
       setScan(result);
-      setScanError("");
-    } catch (error) { setScanError(friendlyError(error, "扫描失败")); }
-    finally { setScanBusy(false); }
+      onScanned(result);
+    } catch (error) {
+      setScanError(friendlyError(error, "请检查数据源或稍后重试。"));
+      setFailedReplay(replay);
+    } finally {
+      setScanBusy(false);
+    }
   };
-  const displayedCandidates = scan?.candidates ?? candidates;
-  if (!market || market.status === "unavailable") return <section className="single-panel panel"><EmptyState message="还没有市场快照。先运行一次收盘复盘。" /></section>;
-  const sectors = (market.sectors as Array<{ name: string; change_pct: number; breadth: number }> | undefined) ?? [];
-  const indices = (market.indices as Array<{ name: string; close: number; change_pct: number }> | undefined) ?? [];
-  return <section className="control-grid">
-    <Panel title="市场快照" eyebrow={`截至 ${String(market.as_of)}`} wide>
-      <div className="snapshot-head">
-        <div><strong className="big-number">{Math.round(Number(market.breadth) * 100)}%</strong><span>市场宽度</span></div>
-        <div><strong className="big-number">{localizedLabel(trendLabels, market.index_trend)}</strong><span>指数趋势</span></div>
-        <div><strong className="big-number">{rulePercent(market.volatility)}</strong><span>波动率</span></div>
-        <div><strong className="big-number">{market.source === "fixture" ? "回放数据" : String(market.source)}</strong><span>数据来源</span></div>
-      </div>
-    </Panel>
-    <div className="wide"><MarketCharts market={market} indices={indices} /></div>
-    <Panel title="指数" eyebrow="收盘数据">
-      <div className="data-table">{indices.map((index) => <div className="data-row" key={index.name}>
-        <strong>{index.name}</strong>
-        <span>{index.close.toFixed(2)}</span>
-        <span className={index.change_pct >= 0 ? "up" : "down"}>{index.change_pct >= 0 ? "+" : ""}{index.change_pct.toFixed(2)}%</span>
-      </div>)}</div>
-    </Panel>
-    <Panel title="行业强弱" eyebrow="相对表现">
-      <div className="data-table">{sectors.map((sector) => <div className="data-row" key={sector.name}>
-        <strong>{sector.name}</strong>
-        <span>{Math.round(sector.breadth * 100)}% 宽度</span>
-        <span className={sector.change_pct >= 0 ? "up" : "down"}>{sector.change_pct >= 0 ? "+" : ""}{sector.change_pct.toFixed(1)}%</span>
-      </div>)}</div>
-    </Panel>
-    <Panel title="候选扫描" eyebrow="可回放的排序">
-      <div className="scan-controls">
-        <label>策略 <select value={strategy} onChange={(event) => setStrategy(event.target.value)}>
-          {(strategies.length ? strategies : [{ strategy_id: "legacy_momentum_v1", version: "1.0.0" }]).map((item) =>
-            <option key={`${item.strategy_id}@${item.version}`} value={`${item.strategy_id}@${item.version}`}>{item.strategy_id} · {item.version}</option>)}
-        </select></label>
-        <button className="quiet-button" onClick={() => void executeScan()} disabled={scanBusy}><MagnifyingGlassIcon size={16} />扫描</button>
-        {scan?.scan_id && <button className="quiet-button" onClick={() => void executeScan(true)} disabled={scanBusy}><ArrowCounterClockwiseIcon size={16} />复算</button>}
-      </div>
-      {scanError && <p role="status">{scanError}</p>}
-      <div className="data-table">{displayedCandidates.map((candidate) => <div className="data-row candidate-row" key={String(candidate.symbol)}>
-        <strong>{String(candidate.symbol)}</strong>
-        <span>{String(candidate.name)} · score {Number(candidate.score).toFixed(2)}</span>
-        <button className="quiet-button" onClick={() => onWatch(String(candidate.symbol))}>加入观察</button>
-        <button className="quiet-button" onClick={() => onResearch(String(candidate.symbol))}>开始研究</button>
-        <details className="candidate-factors"><summary>评分依据</summary>
-          {Array.isArray(candidate.factors) && candidate.factors.map((factor) => <p key={String(factor.id)}>
-            {String(factor.id)} · {Number(factor.value).toLocaleString(undefined, { maximumFractionDigits: 6 })} × {Number(factor.weight).toLocaleString(undefined, { maximumFractionDigits: 6 })} = {Number(factor.contribution).toLocaleString(undefined, { maximumFractionDigits: 6 })}
-          </p>)}
-          <small>{String(candidate.snapshot_id)} · {String(candidate.quality ?? "unknown")}</small>
-          {Array.isArray(candidate.warnings) && candidate.warnings.map((warning) => <p key={String(warning)}>{String(warning)}</p>)}
-        </details>
-      </div>)}</div>
-      {scan?.excluded && scan.excluded.length > 0 && <details><summary>已排除 {scan.excluded.length} 个标的</summary>
-        {scan.excluded.map((item) => <p key={String(item.symbol)}>{String(item.symbol)} · {Array.isArray(item.reason_codes) ? item.reason_codes.join(" · ") : ""}</p>)}
+
+  const savedSymbols = new Set(watchlists.flatMap((list) => list.symbols));
+  const result = !scanBusy && !scanError ? scan : null;
+  const excluded = result?.excluded ?? [];
+  const sourceLabel = localizedLabel(scanSourceLabels, source, "来源未知");
+  const resultSource = localizedLabel(scanSourceLabels, result?.source ?? result?.candidates[0]?.source, sourceLabel);
+  const scanSummary = result
+    ? `${result.as_of ?? asOf} · ${resultSource} · ${result.candidates.length} 只候选`
+    : asOf ? `${asOf} · ${sourceLabel}` : undefined;
+
+  let notice: ReactNode;
+  if (pending) {
+    notice = <div className="scan-state" role="status"><strong>正在读取行情快照</strong></div>;
+  } else if (!asOf) {
+    notice = <div className="scan-state">
+      <div><strong>缺少可用行情</strong><p>{source === "fixture"
+        ? "当前只有演示行情。同步真实行情后可以扫描。"
+        : "同步市场数据后，就能按策略筛选候选。"}</p></div>
+      <button className="primary-button" type="button" onClick={onOpenData}>前往数据页<ArrowRightIcon size={16} aria-hidden="true" /></button>
+    </div>;
+  } else if (scanBusy) {
+    notice = <div className="scan-state" role="status"><strong>正在扫描行情</strong></div>;
+  } else if (scanError) {
+    notice = <div className="scan-state" role="alert"><div><strong>扫描失败</strong><p>{scanError}</p></div></div>;
+  } else if (!result) {
+    notice = <div className="scan-state"><strong>点击「扫描」，查看所选策略的候选。</strong></div>;
+  } else if (result.candidates.length === 0) {
+    notice = <div className="scan-state" role="status">
+      <div><strong>扫描完成，0 只符合条件</strong><p>{excluded.length > 0 ? `${excluded.length} 只标的被筛除。` : "行情快照中没有可供筛选的标的。"}</p></div>
+    </div>;
+  }
+
+  return <div id="market-candidates" className="wide" tabIndex={-1}>
+    <Panel title="候选扫描" eyebrow={scanSummary} actions={asOf && <div className="scan-controls">
+      <label>策略 <select value={strategy} disabled={scanBusy} onChange={(event) => {
+        setStrategy(event.target.value);
+        setScan(null);
+        setScanError("");
+      }}>
+        {strategies.map((item) => <option key={`${item.strategy_id}@${item.version}`} value={`${item.strategy_id}@${item.version}`}>
+          {item.strategy_id === DEFAULT_SCAN_STRATEGY.strategy_id ? "动量与成交额" : item.strategy_id} · {item.version}
+        </option>)}
+      </select></label>
+      <button className="quiet-button" type="button" onClick={() => void executeScan(Boolean(scanError && failedReplay))} disabled={scanBusy}>
+        <MagnifyingGlassIcon size={16} aria-hidden="true" />{scanError ? "重试扫描" : "扫描"}
+      </button>
+      {scan?.scan_id && !scanError && <button className="quiet-button" type="button" onClick={() => void executeScan(true)} disabled={scanBusy}>
+        <ArrowCounterClockwiseIcon size={16} aria-hidden="true" />复算
+      </button>}
+    </div>}>
+      {notice}
+      {result && result.candidates.length > 0 &&
+      <div className="data-table">{result.candidates.map((candidate) => {
+        const symbol = String(candidate.symbol);
+        const saved = savedSymbols.has(symbol);
+        return <div className="data-row candidate-row" key={symbol}>
+          <strong>{symbol}</strong>
+          <span>{String(candidate.name ?? symbol)} · 评分 {Number(candidate.score).toFixed(2)}</span>
+          <button className="quiet-button" type="button" aria-label={saved ? `${symbol} 已在自选` : `加入自选 ${symbol}`}
+            disabled={saved || Boolean(savingSymbol)} onClick={async () => {
+              setSavingSymbol(symbol);
+              setWatchError("");
+              try {
+                await onWatch(symbol);
+              } catch (error) {
+                setWatchError(friendlyError(error, "加入自选失败，请重试。"));
+              } finally {
+                setSavingSymbol("");
+              }
+            }}>{saved ? "已在自选" : savingSymbol === symbol ? "正在加入…" : "加入自选"}</button>
+          <button className="quiet-button" type="button" onClick={() => onResearch(symbol)}>开始研究</button>
+          <details className="candidate-factors"><summary>评分依据</summary>
+            {Array.isArray(candidate.factors) && candidate.factors.map((factor) => <p key={String(factor.id)}>
+              • {String(factor.id)} · {Number(factor.value).toLocaleString(undefined, { maximumFractionDigits: 6 })} × {Number(factor.weight).toLocaleString(undefined, { maximumFractionDigits: 6 })} = {Number(factor.contribution).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+            </p>)}
+            <small>{String(candidate.snapshot_id)} · {localizedLabel(qualityLabels, candidate.quality, "未知")}</small>
+            {Array.isArray(candidate.warnings) && candidate.warnings.map((warning) => <p key={String(warning)}>{localizedLabel(scanExclusionLabels, warning)}</p>)}
+          </details>
+        </div>;
+      })}</div>}
+      {watchError && <p className="form-hint" role="alert">{watchError}</p>}
+      {excluded.length > 0 && <details className="scan-exclusions" onToggle={(event) => setShowExcluded(event.currentTarget.open)}>
+        <summary>查看筛除原因（{excluded.length}）</summary>
+        {showExcluded && <ul>{excluded.map((item, index) => <li key={`${String(item.symbol)}-${index}`}>
+          <strong>{String(item.symbol)}</strong>{" · "}{Array.isArray(item.reason_codes) ? item.reason_codes.map((reason) => localizedLabel(scanExclusionLabels, reason)).join("、") : "未记录原因"}
+        </li>)}</ul>}
       </details>}
     </Panel>
+  </div>;
+}
+
+function MarketView({ market, demo, ...candidateProps }: {
+  market: Record<string, unknown> | null;
+  demo: boolean;
+} & Omit<MarketCandidatesProps, "asOf" | "source" | "fixture">) {
+  const snapshot = market?.snapshot_id ? market : null;
+  const demoSnapshot = snapshot?.source === "fixture" || snapshot?.provider_id === "fixture";
+  const asOf = demo ? REPLAY_AS_OF : !demoSnapshot && typeof snapshot?.as_of === "string"
+    && (snapshot.quality === "verified" || snapshot.quality === "partial") ? snapshot.as_of : undefined;
+  const source = demo ? "fixture" : typeof snapshot?.source === "string" ? snapshot.source : undefined;
+  const sectors = (snapshot?.sectors as Array<{ name: string; change_pct: number; breadth: number }> | undefined) ?? [];
+  const indices = (snapshot?.indices as Array<{ name: string; close: number; change_pct: number }> | undefined) ?? [];
+  return <section className="control-grid">
+    <MarketCandidates asOf={asOf} source={source} fixture={demo ? `close-${REPLAY_AS_OF}.json` : undefined} {...candidateProps} />
+    {snapshot && <>
+      <Panel title="市场快照" eyebrow={`截至 ${String(snapshot.as_of)}`} wide>
+        <div className="snapshot-head">
+          <div><strong className="big-number">{Math.round(Number(snapshot.breadth) * 100)}%</strong><span>市场宽度</span></div>
+          <div><strong className="big-number">{localizedLabel(trendLabels, snapshot.index_trend)}</strong><span>指数趋势</span></div>
+          <div><strong className="big-number">{rulePercent(snapshot.volatility)}</strong><span>波动率</span></div>
+          <div><strong className="big-number">{snapshot.source === "fixture" ? "回放数据" : String(snapshot.source)}</strong><span>数据来源</span></div>
+        </div>
+      </Panel>
+      <div className="wide"><MarketCharts market={snapshot} indices={indices} /></div>
+      <Panel title="指数" eyebrow="收盘数据">
+        <div className="data-table">{indices.map((index) => <div className="data-row" key={index.name}>
+          <strong>{index.name}</strong>
+          <span>{index.close.toFixed(2)}</span>
+          <span className={index.change_pct >= 0 ? "up" : "down"}>{index.change_pct >= 0 ? "+" : ""}{index.change_pct.toFixed(2)}%</span>
+        </div>)}</div>
+      </Panel>
+      <Panel title="行业强弱" eyebrow="相对表现">
+        <div className="data-table">{sectors.map((sector) => <div className="data-row" key={sector.name}>
+          <strong>{sector.name}</strong>
+          <span>{Math.round(sector.breadth * 100)}% 宽度</span>
+          <span className={sector.change_pct >= 0 ? "up" : "down"}>{sector.change_pct >= 0 ? "+" : ""}{sector.change_pct.toFixed(1)}%</span>
+        </div>)}</div>
+      </Panel>
+    </>}
   </section>;
 }
 
@@ -1714,7 +1884,7 @@ type PortfolioPositionDraft = {
   positionIndex?: number;
 };
 
-function PortfolioDialog({ title, pending, onClose, children, wide }: {
+function WorkspaceDialog({ title, pending, onClose, children, wide }: {
   title: string; pending: boolean; onClose: () => void; children: ReactNode; wide?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -1726,12 +1896,12 @@ function PortfolioDialog({ title, pending, onClose, children, wide }: {
     return () => dialog?.close();
   }, []);
 
-  return <dialog ref={dialogRef} className={`runtime-dialog${wide ? " portfolio-import-dialog" : ""}`} aria-labelledby="portfolio-dialog-title"
+  return <dialog ref={dialogRef} className={`runtime-dialog${wide ? " workspace-dialog-wide" : ""}`} aria-labelledby="workspace-dialog-title"
     onCancel={(event) => {
       event.preventDefault();
       if (!pending) onClose();
     }}>
-    <h2 id="portfolio-dialog-title">{title}</h2>
+    <h2 id="workspace-dialog-title">{title}</h2>
     {children}
   </dialog>;
 }
@@ -1748,7 +1918,7 @@ function PortfolioPositionDialog({ draft, onClose, onChanged }: {
   const deleting = mode === "delete";
   const title = { add: "新增持仓", edit: "编辑持仓", delete: "删除持仓" }[mode];
 
-  return <PortfolioDialog title={title} pending={saving} onClose={onClose}>
+  return <WorkspaceDialog title={title} pending={saving} onClose={onClose}>
     <form onSubmit={async (event) => {
       event.preventDefault();
       if (saving) return;
@@ -1784,7 +1954,7 @@ function PortfolioPositionDialog({ draft, onClose, onChanged }: {
       }
     }}>
       {deleting && <p className="portfolio-dialog-hint">从所选日期的持仓中移除 <strong>{String(position?.symbol)}</strong>。已有研究仍可查看原持仓快照。</p>}
-      <fieldset className="runtime-fields position-fields" disabled={saving}>
+      <fieldset className="runtime-fields dialog-fields" disabled={saving}>
         {!deleting && <label>股票或 ETF 代码<input name="symbol" defaultValue={String(position?.symbol ?? "")} readOnly={!!position} required
           placeholder="例如 000001" pattern={position ? undefined : "[0-9]{6}(\\.([sS][hHzZ]|[bB][jJ]))?"} autoComplete="off" /></label>}
         <label>持仓日期<input name="as_of" type="date" value={date} onChange={(event) => setDate(event.target.value)}
@@ -1804,7 +1974,7 @@ function PortfolioPositionDialog({ draft, onClose, onChanged }: {
         </button>
       </div>
     </form>
-  </PortfolioDialog>;
+  </WorkspaceDialog>;
 }
 
 function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
@@ -1817,7 +1987,7 @@ function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
 
-  return <PortfolioDialog title="批量导入持仓" pending={importing} onClose={onClose} wide>
+  return <WorkspaceDialog title="批量导入持仓" pending={importing} onClose={onClose} wide>
     <p className="portfolio-dialog-hint">导入会为所选日期保存一份完整快照，请包含该日期的全部持仓。</p>
     <form onSubmit={async (event) => {
       event.preventDefault();
@@ -1867,7 +2037,7 @@ function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
         setImporting(false);
       }
     }}>
-      <fieldset className="runtime-fields position-fields" disabled={importing}>
+      <fieldset className="runtime-fields dialog-fields" disabled={importing}>
         <label>持仓日期<input name="as_of" type="date" defaultValue={defaultDate} max={shanghaiDate()} required /></label>
         <div className="portfolio-import-sources" role="group" aria-label="导入方式">
           <button type="button" aria-pressed={source === "file"} onClick={() => { setSource("file"); setError(""); }}>上传文件</button>
@@ -1890,7 +2060,7 @@ function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
         <button className="primary-button" disabled={importing}>{importing ? "正在导入…" : "导入持仓"}</button>
       </div>
     </form>
-  </PortfolioDialog>;
+  </WorkspaceDialog>;
 }
 
 function PortfolioView({ portfolio, demoDate, onChanged }: {
@@ -1915,7 +2085,7 @@ function PortfolioView({ portfolio, demoDate, onChanged }: {
 
   return <section className="control-grid portfolio-grid">
     <Panel title="我的持仓" eyebrow={snapshot ? asOf : "暂无快照"} wide actions={
-      <div className="portfolio-actions">
+      <div className="workspace-actions">
         <button type="button" className="quiet-button" onClick={() => { setStatus(""); setEditor("import"); }}>批量导入</button>
         <button ref={addButtonRef} type="button" className="primary-button" disabled={!portfolio} onClick={() => openEditor("add")}>
           <PlusIcon size={16} aria-hidden="true" />新增持仓
@@ -2519,9 +2689,9 @@ function DebateView({ debate }: { debate: Record<string, Record<string, unknown>
 }
 
 function Panel({ title, eyebrow, wide, actions, children }: {
-  title: string; eyebrow: string; wide?: boolean; actions?: ReactNode; children: ReactNode;
+  title: string; eyebrow?: string; wide?: boolean; actions?: ReactNode; children: ReactNode;
 }) {
-  return <section className={`sub-panel ${wide ? "wide" : ""}`}><div className="panel-header"><div><span className="eyebrow">{eyebrow}</span><h3>{title}</h3></div>{actions}</div>{children}</section>;
+  return <section className={`sub-panel ${wide ? "wide" : ""}`}><div className="panel-header"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h3>{title}</h3></div>{actions}</div>{children}</section>;
 }
 
 const ruleReasonLabels: Record<string, string> = {

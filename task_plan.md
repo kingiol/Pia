@@ -1,5 +1,13 @@
 # Task Plan: Pia Full Local + Cloud Implementation
 
+## Candidate discovery and watchlists (2026-11-22)
+
+- Goal: make Market the single place to discover candidates and Watchlist the place to revisit saved symbols.
+- Scope: put the candidate panel first in Market, add navigation from Watchlist, and show usable data, scan failure, and zero-match states with an action in each state.
+- Acceptance: a live workspace with only demo data links to Data; a demo scan is labeled; a failed scan can be retried; a zero-match scan shows exclusion reasons; adding a candidate updates the saved watchlist and existing lists remain editable.
+- Verification: exercise each screen state and the save workflow in an isolated browser session, then run contract and build checks.
+- Status: complete. Verified candidate states, watchlist navigation and saves, concurrent appends, and the macOS app build.
+
 ## Portfolio management and import (2026-11-22)
 
 - Goal: give the shared Desktop/Web Portfolio view one working bulk-import entry and visible edit and delete actions on each saved position.
