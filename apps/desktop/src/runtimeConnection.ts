@@ -14,11 +14,11 @@ export async function waitForLocalRuntime(readHealth: () => Promise<{ runtime: s
     try {
       health = await readHealth();
     } catch {
-      if (Date.now() >= deadline) throw new Error("无法启动本地运行时，请检查本地服务后重试，或选择 Cloud。");
+      if (Date.now() >= deadline) throw new Error("无法启动本地运行时，请检查本地服务后重试。");
       await new Promise((resolve) => setTimeout(resolve, 250));
       continue;
     }
-    if (health.runtime !== "local") throw new Error("本地 API 返回了 Cloud 模式，请检查本地端口配置。");
+    if (health.runtime !== "local") throw new Error("本地 API 返回了云端模式，请检查本地端口配置。");
     return;
   }
 }
@@ -28,11 +28,11 @@ export function normalizeCloudUrl(value: string): string {
   try {
     url = new URL(value.trim());
   } catch {
-    throw new Error("请输入有效的 Cloud API 地址。");
+    throw new Error("请输入有效的云端 API 地址。");
   }
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
-    throw new Error("Cloud 地址需要使用 HTTPS；本机调试可使用 HTTP。");
+    throw new Error("云端地址需要使用 HTTPS；本机调试可使用 HTTP。");
   }
   if (url.username || url.password || url.search || url.hash) {
     throw new Error("API 地址不能包含凭据、查询参数或片段。");

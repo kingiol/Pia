@@ -2,6 +2,41 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRightIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { RunFlow as Flow } from "../../../../packages/contracts/generated/typescript/models";
 import { api } from "../api";
+import { researchAgentLabel } from "../researchLabels";
+
+const stageLabels: Record<string, string> = {
+  required_data: "获取必要数据",
+  supplemental_data: "获取补充数据",
+  context: "整理研究上下文",
+  agents: "执行分析",
+  llm_research: "模型补充研究",
+  rules: "检查规则",
+  synthesize: "汇总结论",
+};
+const decisionLabels: Record<string, string> = { WATCH: "观察", NO_ACTION: "暂无动作", BLOCKED: "已阻断" };
+const capabilityLabels: Record<string, string> = {
+  market_snapshot: "行情快照", trading_calendar: "交易日历", fundamentals: "基本面数据",
+  news: "新闻", filings: "公告", company_profile: "公司概况", daily_bars: "日线行情",
+  index_series: "指数行情", security_master: "证券基础资料",
+};
+const statusLabels: Record<Flow["nodes"][number]["status"], string> = {
+  pending: "待执行", running: "执行中", completed: "已完成", skipped: "已跳过", failed: "失败", blocked: "已阻断",
+};
+const relationLabels: Record<Flow["edges"][number]["relation"], string> = {
+  sequence: "下一步", depends_on: "依赖", fallback: "切换备用来源", produces: "生成",
+};
+
+function nodeLabel(node: Flow["nodes"][number]) {
+  if (node.label.startsWith("Decision: ")) {
+    const status = node.label.slice("Decision: ".length);
+    return `结论：${Object.hasOwn(decisionLabels, status) ? decisionLabels[status] : status}`;
+  }
+  const capabilityPrefix = `${node.stage_id} / `;
+  if (node.label.startsWith(capabilityPrefix) && Object.hasOwn(capabilityLabels, node.stage_id)) {
+    return `${capabilityLabels[node.stage_id]} / ${node.label.slice(capabilityPrefix.length)}`;
+  }
+  return Object.hasOwn(stageLabels, node.label) ? stageLabels[node.label] : researchAgentLabel(node.label);
+}
 
 export function RunFlow({ taskId, revision }: { taskId: string; revision: number }) {
   const [flow, setFlow] = useState<Flow | null>(null);
@@ -39,17 +74,18 @@ export function RunFlow({ taskId, revision }: { taskId: string; revision: number
     {error && <p role="status">{error}</p>}
     <ol className="flow-nodes" aria-label="研究执行流程">{flow?.nodes.map((item) => <li key={item.id}>
       <button className="quiet-button flow-node" aria-pressed={selected === item.id}
-        onClick={() => setSelected(item.id)} aria-label={`${item.label} ${item.status}`}>
+        onClick={() => setSelected(item.id)} aria-label={`${nodeLabel(item)} ${statusLabels[item.status]}`}>
         {item.status === "completed" ? <CheckCircleIcon size={18} /> : <WarningCircleIcon size={18} />}
-        <span>{item.label}<small>{item.status} · {item.duration_ms == null ? "耗时未知" : `${Math.round(item.duration_ms)} ms`}</small></span>
+        <span>{nodeLabel(item)}<small>{statusLabels[item.status]} · {item.duration_ms == null ? "耗时未知" : `${Math.round(item.duration_ms)} 毫秒`}</small></span>
       </button>
       {flow.edges.filter((edge) => edge.source === item.id).map((edge) => <span className="flow-edge" key={edge.target}>
-        <ArrowRightIcon size={14} aria-hidden="true" /> {edge.relation}
+        <ArrowRightIcon size={14} aria-hidden="true" /> {relationLabels[edge.relation]}
       </span>)}
     </li>)}</ol>
     {node && <div className="flow-selection" role="status">
-      <strong>{node.label}</strong>
-      <p>{node.reason_codes?.join(" · ") || node.status}</p>
+      <strong>{nodeLabel(node)}</strong>
+      <p>{statusLabels[node.status]}</p>
+      {!!node.reason_codes?.length && <p>原因代码：{node.reason_codes.join(" · ")}</p>}
       {!!node.artifact_refs?.length && <p>{node.artifact_refs.join(" · ")}</p>}
       <a href="#research-trace">研究过程</a>{" · "}<a href="#research-evidence">依据</a>
     </div>}

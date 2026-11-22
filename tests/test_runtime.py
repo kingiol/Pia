@@ -429,6 +429,8 @@ class RuntimeTest(unittest.TestCase):
             self.assertEqual(len(detail["tool_calls"]), len(detail["trace"]))
             self.assertIn("Bull Case Analyst", detail["debate"])
             self.assertIn("Bear Case Analyst", detail["debate"])
+            self.assertIn("市场广度", detail["debate"]["Bull Case Analyst"]["points"][0])
+            self.assertTrue(any(item["title"] == "持仓风险快照" for item in detail["evidence"]))
             self.assertTrue(any(item.get("used_by") for item in detail["evidence"]))
             self.assertTrue(any(
                 "Final decision" in item.get("used_by", [])
@@ -1709,8 +1711,9 @@ class RuntimeTest(unittest.TestCase):
             self.assertEqual(result["status"], "DISPATCHED")
             self.assertEqual(detail["task"]["trigger_type"], "PortfolioRiskChanged")
             notifications = runtime.db.list_notifications(unread_only=True)
-            self.assertTrue(any(item["task_id"] == result["task_id"] for item in notifications))
-            notification_id = notifications[0]["id"]
+            notification = next(item for item in notifications if item["task_id"] == result["task_id"])
+            self.assertEqual(notification["title"], "持仓风险变化任务已创建")
+            notification_id = notification["id"]
             deliveries = runtime.db.list_notification_deliveries(
                 notification_id,
                 user_id="default",

@@ -78,10 +78,10 @@ test("shows only the runtime modes enabled by the desktop debug command", async 
         const { DesktopApp } = await server.ssrLoadModule("/src/DesktopApp.tsx");
         const html = renderToStaticMarkup(createElement(DesktopApp));
         if (flag === "1") {
-          assert.doesNotMatch(html, /Cloud<\/button>|id="runtime-dialog-title"/);
-          assert.match(html, /aria-pressed="true"[^>]*>.*?Local<\/button>/);
+          assert.doesNotMatch(html, /云端<\/button>|id="runtime-dialog-title"/);
+          assert.match(html, /aria-pressed="true"[^>]*>.*?本地<\/button>/);
         } else {
-          assert.match(html, /Cloud<\/button>/);
+          assert.match(html, /云端<\/button>/);
           assert.match(html, /id="runtime-dialog-title"/);
         }
       } finally {
@@ -153,7 +153,7 @@ test("stops waiting when local startup reaches its deadline", async () => {
 
 test("rejects a Cloud runtime at the Local address without retrying", async () => {
   await withStartupClock(async (elapsed) => {
-    await assert.rejects(waitForLocalRuntime(async () => ({ runtime: "cloud" })), /Cloud 模式/);
+    await assert.rejects(waitForLocalRuntime(async () => ({ runtime: "cloud" })), /云端模式/);
     assert.equal(elapsed(), 0);
   });
 });

@@ -1,5 +1,6 @@
 {
-  "name": "Pia Research Workspace",
+  "name": "Pia 投资研究工作台",
+  "lang": "zh-CN",
   "short_name": "Pia",
   "start_url": "/",
   "display": "standalone",

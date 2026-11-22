@@ -149,7 +149,7 @@ fn main() {
             TrayIconBuilder::new()
                 .icon(Image::from_bytes(include_bytes!("../icons/icon.png"))?)
                 .menu(&menu)
-                .tooltip("Pia Research Workspace")
+                .tooltip("Pia 投资研究工作台")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {

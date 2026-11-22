@@ -31,8 +31,8 @@ async function startLocalRuntime() {
 function connectionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (/unauthorized|401/i.test(message)) return "访问令牌无效或已过期，请重新输入。";
-  if (/fetch|network|timeout|aborted/i.test(message)) return "无法连接 Cloud，请检查 API 地址和网络后重试。";
-  return message;
+  if (/fetch|network|timeout|aborted/i.test(message)) return "无法连接运行环境，请检查服务地址和网络后重试。";
+  return /\p{Script=Han}/u.test(message) ? message : "连接运行环境失败，请检查服务后重试。";
 }
 
 export function DesktopApp() {
@@ -91,7 +91,7 @@ export function DesktopApp() {
           fetcher: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(10000) }),
         });
         const health = await client.health();
-        if (health.runtime !== "cloud") throw new Error("该地址不是 Cloud 运行时，请检查 API 地址。");
+        if (health.runtime !== "cloud") throw new Error("请填写云端运行时的 API 地址。");
         await client.tasks();
         saveCloudToken(window.sessionStorage, next.cloudUrl, token);
       }
@@ -111,15 +111,15 @@ export function DesktopApp() {
       <div className="runtime-options" role="group" aria-label="运行环境">
         <button type="button" aria-pressed={connection.mode === "local"} disabled={pending} onClick={() => {
           if (connection.mode !== "local" || !ready) void connect("local");
-        }}><DesktopIcon size={16} aria-hidden="true" />Local</button>
+        }}><DesktopIcon size={16} aria-hidden="true" />本地</button>
         {!LOCAL_ONLY && <button type="button" aria-pressed={connection.mode === "cloud"} disabled={pending} onClick={() => {
           setError(null);
           setCloudUrl(connection.cloudUrl);
           setToken(readCloudToken(window.sessionStorage, connection.cloudUrl) ?? "");
           setChoosing(true);
-        }}><CloudIcon size={16} aria-hidden="true" />Cloud</button>}
+        }}><CloudIcon size={16} aria-hidden="true" />云端</button>}
       </div>
-      {startupError ? <p className="runtime-error" role="alert">{startupError}</p> : !ready ? <p className="runtime-starting" role="status">正在连接 {connection.mode === "local" ? "Local" : "Cloud"}…</p> : null}
+      {startupError ? <p className="runtime-error" role="alert">{startupError}</p> : !ready ? <p className="runtime-starting" role="status">正在连接{connection.mode === "local" ? "本地" : "云端"}…</p> : null}
     </div>} />
     {!LOCAL_ONLY && <dialog ref={dialogRef} className="runtime-dialog" aria-labelledby="runtime-dialog-title" onCancel={(event) => {
       if (pending) event.preventDefault();
@@ -127,11 +127,11 @@ export function DesktopApp() {
     }} onClose={() => setChoosing(false)}>
       <form onSubmit={(event) => { event.preventDefault(); void connect("cloud"); }}>
         <div className="runtime-dialog-heading">
-          <h2 id="runtime-dialog-title"><CloudIcon size={18} aria-hidden="true" />Cloud 连接</h2>
-          <button type="button" className="icon-button" aria-label="关闭 Cloud 配置" title="关闭" disabled={pending} onClick={() => setChoosing(false)}><XIcon size={16} aria-hidden="true" /></button>
+          <h2 id="runtime-dialog-title"><CloudIcon size={18} aria-hidden="true" />云端连接</h2>
+          <button type="button" className="icon-button" aria-label="关闭云端配置" title="关闭" disabled={pending} onClick={() => setChoosing(false)}><XIcon size={16} aria-hidden="true" /></button>
         </div>
         <div className="runtime-fields">
-          <label htmlFor="cloud-url">Cloud API 地址</label>
+          <label htmlFor="cloud-url">云端 API 地址</label>
           <input id="cloud-url" type="url" required placeholder="https://pia.example.com/api" value={cloudUrl} disabled={pending} onChange={(event) => { setCloudUrl(event.target.value); setToken(""); }} autoComplete="url" spellCheck={false} />
           <label htmlFor="cloud-token">访问令牌</label>
           <input id="cloud-token" type="password" required value={token} disabled={pending} onChange={(event) => setToken(event.target.value)} autoComplete="off" />
@@ -139,7 +139,7 @@ export function DesktopApp() {
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
         <div className="runtime-dialog-actions">
           <button type="button" className="quiet-button" disabled={pending} onClick={() => setChoosing(false)}>取消</button>
-          <button className="primary-button" disabled={pending || !cloudUrl.trim() || !token.trim()}>{pending ? "正在连接…" : "连接 Cloud"}</button>
+          <button className="primary-button" disabled={pending || !cloudUrl.trim() || !token.trim()}>{pending ? "正在连接…" : "连接云端"}</button>
         </div>
       </form>
     </dialog>}

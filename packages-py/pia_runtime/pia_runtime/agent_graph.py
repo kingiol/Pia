@@ -135,6 +135,7 @@ def build_research_graph(run_agent: AgentRunner):
 
     def bull(state: ResearchGraphState) -> ResearchGraphState:
         market = state["market"]
+        trend = {"up": "上涨", "down": "下跌", "flat": "横盘"}.get(market["index_trend"], "未知")
         evidence_ids = list(state.get("evidence_ids", []))
         return invoke(
             state,
@@ -143,11 +144,11 @@ def build_research_graph(run_agent: AgentRunner):
             {
                 "stance": "bull",
                 "points": [
-                    f"Market breadth is {market['breadth']:.0%}.",
-                    f"Index trend is {market['index_trend']}.",
+                    f"市场广度为 {market['breadth']:.0%}。",
+                    f"指数趋势：{trend}。",
                 ],
                 "evidence_ids": evidence_ids[:2],
-                "unresolved_questions": ["Can breadth persist over the next session?"],
+                "unresolved_questions": ["下一交易日的市场广度能否保持？"],
             },
         )
 
@@ -161,11 +162,11 @@ def build_research_graph(run_agent: AgentRunner):
             {
                 "stance": "bear",
                 "points": [
-                    f"Portfolio drawdown is {portfolio_value['drawdown']:.1%}.",
-                    "Position concentration can amplify downside risk.",
+                    f"组合回撤为 {portfolio_value['drawdown']:.1%}。",
+                    "持仓集中可能放大下行风险。",
                 ],
                 "evidence_ids": [evidence_ids[-1]] if evidence_ids else [],
-                "unresolved_questions": ["Will concentration remain above the configured limit?"],
+                "unresolved_questions": ["持仓集中度是否会继续超过设定上限？"],
             },
         )
 
@@ -178,10 +179,10 @@ def build_research_graph(run_agent: AgentRunner):
                 "bear_agent": "Bear Case Analyst",
             },
             {
-                "verdict": "Risk gates take precedence until concentration and market conditions are resolved.",
+                "verdict": "持仓集中度和市场条件仍需确认，当前以风险规则为准。",
                 "unresolved_questions": [
-                    "Whether the next market snapshot confirms the current trend.",
-                    "Whether portfolio weights return below the configured limits.",
+                    "下一份行情快照能否确认当前趋势？",
+                    "持仓权重能否回到设定上限以内？",
                 ],
             },
         )

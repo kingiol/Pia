@@ -405,7 +405,7 @@ struct ContentView: View {
             try await client.markNotificationRead(id)
             await refresh()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = researchErrorMessage(error, fallback: "标记通知失败，请重试。")
         }
     }
 
@@ -437,7 +437,7 @@ struct ContentView: View {
             )
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = researchErrorMessage(error, fallback: "刷新失败，请重试。")
         }
     }
 
@@ -460,7 +460,7 @@ struct ContentView: View {
             selectedTab = 1
             await refresh()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = researchErrorMessage(error, fallback: "创建收盘复盘失败，请重试。")
         }
     }
 
@@ -477,7 +477,7 @@ struct ContentView: View {
             await refresh()
         } catch {
             connected = false
-            errorMessage = error.localizedDescription
+            errorMessage = researchErrorMessage(error, fallback: "连接研究服务失败，请检查服务地址。")
         }
     }
 
@@ -628,7 +628,7 @@ private struct TaskDetailView: View {
                     }
                     if let trace = detail?.trace, !trace.isEmpty {
                         ForEach(Array(trace.enumerated()), id: \.offset) { _, run in
-                            Text(stringValue(run["agent_name"]) ?? "分析步骤")
+                            Text(researchAgentLabel(stringValue(run["agent_name"])))
                                 .font(.subheadline)
                         }
                     } else {
@@ -722,7 +722,7 @@ private struct TaskDetailView: View {
             errorMessage = nil
         } catch {
             actionsVerified = false
-            errorMessage = error.localizedDescription
+            errorMessage = researchErrorMessage(error, fallback: "读取研究失败，请刷新重试。")
         }
     }
 
@@ -752,7 +752,7 @@ private struct TaskDetailView: View {
                 errorMessage = nil
             } catch {
                 actionsVerified = false
-                errorMessage = error.localizedDescription
+                errorMessage = researchErrorMessage(error, fallback: "提交处理结果失败，请刷新后重试。")
             }
             busy = false
         }
@@ -769,7 +769,7 @@ private struct TaskDetailView: View {
                 actionsVerified = true
             } catch {
                 actionsVerified = false
-                errorMessage = error.localizedDescription
+                errorMessage = researchErrorMessage(error, fallback: "更新研究任务失败，请刷新后重试。")
             }
             busy = false
         }

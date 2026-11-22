@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Pia Research Workspace",
+        "title": "Pia 投资研究工作台",
         "width": 1440,
         "height": 920,
         "minWidth": 1120,

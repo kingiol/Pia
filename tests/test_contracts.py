@@ -197,7 +197,7 @@ class ContractTest(unittest.TestCase):
         self.assertIn('data-shortcut="new-review"', source)
         self.assertIn('aria-label="搜索研究或股票代码"', source)
         self.assertIn("visibleTasks", source)
-        for chart in ("市场宽度", "指数趋势", "持仓暴露", "回撤", "Agent 时间线"):
+        for chart in ("市场宽度", "指数趋势", "持仓暴露", "回撤", "研究过程时间线"):
             self.assertIn(f'<ChartFrame title="{chart}"', source)
 
     def test_migration_contains_audit_and_task_tables(self):

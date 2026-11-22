@@ -1,11 +1,37 @@
 package com.pia.mobile
 
+import java.io.IOException
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import org.json.JSONObject
+
+internal fun researchErrorMessage(error: Exception, fallback: String): String = when {
+    error is PiaApiException && error.status == 401 -> "访问令牌无效或已过期，请重新连接。"
+    error is PiaApiException && error.status == 403 -> "当前账号没有执行此操作的权限。"
+    error is IOException -> "无法连接研究服务，请检查网络后重试。"
+    else -> fallback
+}
+
+internal fun researchAgentLabel(name: String?): String = when (name) {
+    "Investment Chief" -> "研究统筹"
+    "Market Analyst" -> "市场分析"
+    "Sector Analyst" -> "板块分析"
+    "Portfolio Analyst" -> "持仓分析"
+    "Technical Analyst" -> "技术分析"
+    "Stock Researcher" -> "个股研究"
+    "News Analyst" -> "新闻与公告分析"
+    "Bull Case Analyst" -> "看多分析"
+    "Bear Case Analyst" -> "看空分析"
+    "Debate Chair" -> "多空观点汇总"
+    "Research Manager" -> "研究汇总"
+    "Risk / Rules Agent" -> "风险与规则审核"
+    "Decision Agent" -> "决策汇总"
+    "LLM Research Manager" -> "模型补充研究"
+    else -> name ?: "分析步骤"
+}
 
 internal fun JSONObject.text(key: String): String? =
     optString(key).takeIf { it.isNotBlank() && it != "null" }

@@ -34,4 +34,4 @@ data class PiaNotification(
     val readAt: String?,
 )
 
-class PiaApiException(message: String) : Exception(message)
+class PiaApiException(val status: Int, message: String) : Exception(message)

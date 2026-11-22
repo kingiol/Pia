@@ -17,6 +17,16 @@ PRIORITY = {
     "PriceVolumeAnomaly": 40,
 }
 
+EVENT_LABELS = {
+    "PortfolioRiskChanged": "持仓风险变化",
+    "DataQualityDegraded": "数据质量降级",
+    "FilingPublished": "公告发布",
+    "AnnouncementPublished": "公告发布",
+    "MarketClose": "收盘复盘",
+    "MarketBreadthChanged": "市场广度变化",
+    "PriceVolumeAnomaly": "量价异常",
+}
+
 
 class EventEngine:
     def __init__(self, db: Any, runtime: Any) -> None:
@@ -361,8 +371,8 @@ class EventEngine:
             )
             self._notify(
                 event_type,
-                f"{event_type} expired",
-                "The event was recorded but did not start a new workflow because it was expired.",
+                f"{EVENT_LABELS.get(event_type, '事件')}已过期",
+                "事件已记录，因超过有效期，未创建研究任务。",
                 None,
                 user_id=user_id,
             )
@@ -417,16 +427,16 @@ class EventEngine:
             self.db.execute("UPDATE events SET status='DISPATCHED' WHERE id=?", (event_id,))
             self._notify(
                 event_type,
-                f"{event_type} dispatched",
-                f"A {event_type} task was created for local review.",
+                f"{EVENT_LABELS.get(event_type, '事件')}任务已创建",
+                "研究任务已加入队列，可在工作台查看进度。",
                 task_id,
                 user_id=user_id,
             )
         else:
             self._notify(
                 event_type,
-                f"{event_type} received",
-                "The event was recorded but no workflow is configured for it.",
+                f"{EVENT_LABELS.get(event_type, '事件')}已收到",
+                "事件已记录，该类型暂无对应的研究流程。",
                 None,
                 user_id=user_id,
             )
@@ -474,8 +484,8 @@ class EventEngine:
             user_id = str(event["user_id"]) if event and event["user_id"] else "default"
             self._notify(
                 "EventDeliveryFailed",
-                "Event delivery failed",
-                f"Event {event_id} exhausted its retry budget: {error}",
+                "事件处理失败",
+                f"事件 {event_id} 已达到重试上限。可在工作台查看任务详情。",
                 None,
                 user_id=user_id,
             )

@@ -88,7 +88,7 @@ internal fun ResearchDetailScreen(
                 throw cancelled
             } catch (failure: Exception) {
                 actionsVerified = false
-                error = failure.message ?: "读取研究失败，请刷新重试"
+                error = researchErrorMessage(failure, "读取研究失败，请刷新重试。")
             } finally {
                 loading = false
             }
@@ -124,7 +124,7 @@ internal fun ResearchDetailScreen(
             } catch (failure: Exception) {
                 // Require a fresh status before retrying an action whose outcome is uncertain.
                 actionsVerified = false
-                error = failure.message ?: "提交失败，请刷新后重试"
+                error = researchErrorMessage(failure, "提交失败，请刷新后重试。")
             } finally {
                 busy = false
             }
@@ -138,7 +138,7 @@ internal fun ResearchDetailScreen(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            error = failure.message ?: "读取研究失败，请刷新重试"
+            error = researchErrorMessage(failure, "读取研究失败，请刷新重试。")
         } finally {
             loading = false
         }
@@ -267,7 +267,7 @@ internal fun ResearchDetailScreen(
                 items(trace.length()) { index ->
                     val run = trace.optJSONObject(index)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(run?.text("agent_name") ?: "分析步骤", style = MaterialTheme.typography.titleMedium)
+                        Text(researchAgentLabel(run?.text("agent_name")), style = MaterialTheme.typography.titleMedium)
                         run?.text("status")?.let { Text(statusText(it), style = MaterialTheme.typography.bodySmall) }
                         HorizontalDivider()
                     }

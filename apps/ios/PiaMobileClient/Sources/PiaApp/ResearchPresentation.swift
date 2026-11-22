@@ -1,6 +1,35 @@
 import Foundation
 import PiaMobileClient
 
+func researchErrorMessage(_ error: Error, fallback: String) -> String {
+    if let apiError = error as? PiaAPIError, case .http(let status, _) = apiError {
+        if status == 401 { return "访问令牌无效或已过期，请重新连接。" }
+        if status == 403 { return "当前账号没有执行此操作的权限。" }
+    }
+    if error is URLError { return "无法连接研究服务，请检查网络后重试。" }
+    return fallback
+}
+
+func researchAgentLabel(_ name: String?) -> String {
+    switch name {
+    case "Investment Chief": "研究统筹"
+    case "Market Analyst": "市场分析"
+    case "Sector Analyst": "板块分析"
+    case "Portfolio Analyst": "持仓分析"
+    case "Technical Analyst": "技术分析"
+    case "Stock Researcher": "个股研究"
+    case "News Analyst": "新闻与公告分析"
+    case "Bull Case Analyst": "看多分析"
+    case "Bear Case Analyst": "看空分析"
+    case "Debate Chair": "多空观点汇总"
+    case "Research Manager": "研究汇总"
+    case "Risk / Rules Agent": "风险与规则审核"
+    case "Decision Agent": "决策汇总"
+    case "LLM Research Manager": "模型补充研究"
+    default: name ?? "分析步骤"
+    }
+}
+
 extension ResearchTask {
     var researchSymbol: String? {
         guard case .string(let symbol) = target?["symbol"] else { return nil }

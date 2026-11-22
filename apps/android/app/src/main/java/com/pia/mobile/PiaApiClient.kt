@@ -144,7 +144,7 @@ class PiaApiClient(
             val status = connection.responseCode
             if (status !in 200..299) {
                 val body = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                throw PiaApiException(body.ifBlank { "HTTP $status" })
+                throw PiaApiException(status, body.ifBlank { "HTTP $status" })
             }
             connection.inputStream.bufferedReader().use { reader ->
                 var eventType = "message"
@@ -196,7 +196,7 @@ class PiaApiClient(
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (status !in 200..299) throw PiaApiException(text.ifBlank { "HTTP $status" })
+            if (status !in 200..299) throw PiaApiException(status, text.ifBlank { "HTTP $status" })
             return if (text.isBlank()) JSONObject() else JSONObject(text)
         } finally {
             connection.disconnect()

@@ -123,7 +123,7 @@ private fun PiaApp() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                error = failure.message ?: "操作失败，请重试"
+                error = researchErrorMessage(failure, "操作失败，请重试。")
             } finally {
                 operation = null
             }

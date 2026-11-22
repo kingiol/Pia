@@ -31,6 +31,7 @@ import { api, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult
 import type { LocalCredentialStatus, RuleReason } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
+import { researchAgentLabel } from "./researchLabels";
 
 const nav = [
   ["总览", "Overview", "overview"],
@@ -89,17 +90,26 @@ function friendlyError(error: unknown, fallback: string) {
     const code = payload.error ?? payload.message;
     if (code === "task_not_found") return "这条研究记录已不存在。";
     if (code === "unauthorized") return "云端工作区需要重新连接，请输入访问令牌。";
-    if (code) return `请求未完成：${code}`;
+    if (code === "CapabilityUnavailable") return "所需数据暂不可用，请检查数据源后重试。";
+    if (code) return /\p{Script=Han}/u.test(code) ? code : fallback;
   } catch {
     // The runtime may return a plain-text transport error.
   }
   if (/failed to fetch|networkerror|connection refused/i.test(raw)) {
     return "无法连接运行时，请检查所选环境的服务地址和网络后重试。";
   }
+  if (/^(?:request failed:\s*)?(?:unauthorized|401)$/i.test(raw)) return "云端工作区需要重新连接，请输入访问令牌。";
+  if (!/\p{Script=Han}/u.test(raw)) return fallback;
   return raw.length > 220 ? `${raw.slice(0, 217)}…` : raw;
 }
 
 const REPLAY_AS_OF = "2026-11-05";
+const DEFAULT_INVESTMENT_OBJECTIVE = "capital preservation with disciplined growth";
+const DEFAULT_INVESTMENT_OBJECTIVE_LABEL = "稳健增值，优先控制回撤";
+
+function displayInvestmentObjective(objective: string) {
+  return objective === DEFAULT_INVESTMENT_OBJECTIVE ? DEFAULT_INVESTMENT_OBJECTIVE_LABEL : objective;
+}
 
 function shanghaiDate() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -415,7 +425,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       } catch (candidateError) {
         setCandidates([]);
         const message = friendlyError(candidateError, "候选扫描失败");
-        setError(message === "请求未完成：CapabilityUnavailable"
+        setError(message === "所需数据暂不可用，请检查数据源后重试。"
           ? "候选扫描所需的行情暂不可用，请检查数据源和网络，稍后重试。已有快照不代表最新行情。"
           : message);
       }
@@ -701,7 +711,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       await refresh();
       setError(null);
     } catch (requestError) {
-      setError(friendlyError(requestError, "保存 Memory candidate 失败"));
+      setError(friendlyError(requestError, "保存待确认记忆失败"));
     } finally {
       setBusy(false);
     }
@@ -722,7 +732,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       await refresh();
       setError(null);
     } catch (requestError) {
-      setError(friendlyError(requestError, "审核 Memory candidate 失败"));
+      setError(friendlyError(requestError, "审核待确认记忆失败"));
     } finally {
       setBusy(false);
     }
@@ -739,7 +749,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       await refresh();
       setError(null);
     } catch (requestError) {
-      setError(friendlyError(requestError, "保存 Memory 效果反馈失败"));
+      setError(friendlyError(requestError, "保存记忆效果反馈失败"));
     } finally {
       setBusy(false);
     }
@@ -1024,7 +1034,11 @@ function notificationLabel(eventType: string) {
     MarketClose: "收盘复盘",
     PortfolioRiskChanged: "持仓风险",
     FilingPublished: "公告事件",
+    AnnouncementPublished: "公告事件",
     DataQualityDegraded: "数据质量",
+    MarketBreadthChanged: "市场广度变化",
+    PriceVolumeAnomaly: "量价异常",
+    EventDeliveryFailed: "事件处理失败",
     TaskFailed: "任务失败",
     TaskWaitingApproval: "等待确认",
   };
@@ -1078,10 +1092,8 @@ function StrategyAgentPanel({
   onNavigate: (view: string) => void;
 }) {
   const profilePayload = (profile?.payload ?? {}) as Record<string, unknown>;
-  const objective = String(profilePayload.investment_objective ?? "").trim();
-  const objectiveLabel = /capital preservation|disciplined growth/i.test(objective)
-    ? "稳健增值，优先控制回撤"
-    : objective || "还没有设置投资目标";
+  const objective = String(profilePayload.investment_objective ?? "");
+  const objectiveLabel = objective.trim() ? displayInvestmentObjective(objective) : "还没有设置投资目标";
   const riskLabels: Record<string, string> = { conservative: "保守", moderate: "稳健", aggressive: "积极" };
   const riskTolerance = String(profilePayload.risk_tolerance ?? "");
   const riskLabel = riskLabels[riskTolerance] ?? (riskTolerance || "未设置");
@@ -1114,7 +1126,7 @@ function StrategyAgentPanel({
       </div>
     </div>
     <div className="strategy-agent-column agent-column">
-      <div className="strategy-agent-heading"><span className="eyebrow">你的 Agent</span><span className={`agent-status ${agentStatusTone}`}><i className="agent-status-dot" />{agentStatus}</span></div>
+      <div className="strategy-agent-heading"><span className="eyebrow">你的研究助手</span><span className={`agent-status ${agentStatusTone}`}><i className="agent-status-dot" />{agentStatus}</span></div>
       <p className="agent-summary">关注 {watchedSymbols} 个自选标的、{positions} 个持仓</p>
       <div className="agent-details">
         <div><span>上次检查</span><strong>{lastCheck}</strong></div>
@@ -1310,8 +1322,8 @@ function JournalView({ items, summary, patterns, onSaveCandidate, onReviewCandid
                 </span>
               </div>
               {isEditing && <div className="memory-edit-form">
-                <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} aria-label="Memory title" />
-                <textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} aria-label="Memory content" rows={3} />
+                <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} aria-label="记忆标题" />
+                <textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} aria-label="记忆内容" rows={3} />
               </div>}
               <p>{String(candidate.reason ?? "")}</p>
               <div className="pattern-metrics">
@@ -1397,7 +1409,7 @@ function NotificationsView({
         <div className="notification-copy">
           <div className="notification-heading"><strong>{notification.title}</strong><time>{formatDate(notification.created_at)}</time></div>
           <p>{notification.body}</p>
-          <span>{notification.event_type}{notification.task_id ? ` · ${notification.task_id}` : ""}</span>
+          <span>{notificationLabel(notification.event_type)}{notification.task_id ? ` · ${notification.task_id}` : ""}</span>
         </div>
         <div className="notification-actions">
           {notification.task_id && <button className="quiet-button" onClick={() => onOpenTask(notification.task_id as string)}>查看研究</button>}
@@ -1450,7 +1462,7 @@ function TaskQueue({ tasks, selectedId, onSelect, onOpen }: {
       window.requestAnimationFrame(() => document.getElementById(`task-${lastTask.id}`)?.focus());
     }
   };
-  return <div className="task-groups" role="listbox" aria-label="Research tasks" tabIndex={0} onKeyDown={handleKeyDown}>{TASK_GROUPS.map((group) => {
+  return <div className="task-groups" role="listbox" aria-label="研究任务" tabIndex={0} onKeyDown={handleKeyDown}>{TASK_GROUPS.map((group) => {
     const grouped = tasks.filter((task) => group.statuses.includes(task.status));
     if (!grouped.length) return null;
     return <section className="task-group" key={group.key}>
@@ -1458,7 +1470,7 @@ function TaskQueue({ tasks, selectedId, onSelect, onOpen }: {
       {grouped.map((task) => <button id={`task-${task.id}`} role="option" aria-selected={selectedId === task.id} key={task.id} className={`queue-row ${selectedId === task.id ? "selected" : ""}`} onClick={() => onOpen(task.id)}>
         <div className="queue-row-top"><StatusBadge status={task.status} /><time>{formatDate(task.created_at)}</time></div>
         <strong>{task.trigger_type === "MarketClose" ? "收盘市场复盘" : task.trigger_type === "StockResearch" && task.target.symbol ? `${String(task.target.symbol)} 研究` : task.trigger_type}</strong>
-        <span>{String(task.target.as_of ?? "Local fixture")} · {task.id.slice(-6)}</span>
+        <span>{String(task.target.as_of ?? "日期未记录")} · {task.id.slice(-6)}</span>
       </button>)}
     </section>;
   })}</div>;
@@ -1597,14 +1609,14 @@ function AgentTimelineChart({ trace, asOf, source }: {
     const started = new Date(row.started_at).getTime();
     const finished = row.finished_at ? new Date(row.finished_at).getTime() : Date.now();
     return {
-      label: row.agent_name,
+      label: researchAgentLabel(row.agent_name),
       value: Math.max(1, finished - started),
-      display: `${Math.max(1, finished - started)} ms`,
+      display: `${Math.max(1, finished - started)} 毫秒`,
       tone: row.status === "FAILED" ? "negative" as const : row.status === "RUNNING" ? "positive" as const : "neutral" as const,
     };
   });
-  return <ChartFrame title="Agent 时间线" unit="耗时" asOf={asOf} source={source}>
-    <HorizontalBars items={durations} empty="还没有 Agent 过程记录" />
+  return <ChartFrame title="研究过程时间线" unit="耗时" asOf={asOf} source={source}>
+    <HorizontalBars items={durations} empty="还没有研究过程记录" />
   </ChartFrame>;
 }
 
@@ -1749,7 +1761,9 @@ function PortfolioView({ portfolio, demoDate, onImported }: { portfolio: Record<
 }
 
 function ProfileView({ profile, onSaved, localCredentials = false }: { profile: Record<string, unknown> | null; onSaved: () => void; localCredentials?: boolean }) {
-  const [objective, setObjective] = useState("capital preservation with disciplined growth");
+  const savedObjective = String((profile?.payload as Record<string, unknown> | undefined)?.investment_objective ?? DEFAULT_INVESTMENT_OBJECTIVE);
+  const displayedObjective = displayInvestmentObjective(savedObjective);
+  const [objective, setObjective] = useState(displayedObjective);
   const [riskTolerance, setRiskTolerance] = useState("moderate");
   const [drawdownLimit, setDrawdownLimit] = useState("0.15");
   const [assetTypes, setAssetTypes] = useState<string[]>(["stock", "etf"]);
@@ -1757,12 +1771,12 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
   const [status, setStatus] = useState("");
   useEffect(() => {
     const payload = (profile?.payload ?? {}) as Record<string, unknown>;
-    setObjective(String(payload.investment_objective ?? "capital preservation with disciplined growth"));
+    setObjective(displayedObjective);
     setRiskTolerance(String(payload.risk_tolerance ?? "moderate"));
     setDrawdownLimit(String(payload.drawdown_limit ?? "0.15"));
     setAssetTypes(Array.isArray(payload.allowed_asset_types) ? payload.allowed_asset_types.map(String) : ["stock", "etf"]);
     setUniverse(Array.isArray(payload.universe) ? payload.universe.map(String) : ["main", "chinext", "star", "bse", "etf"]);
-  }, [profile]);
+  }, [profile, displayedObjective]);
   const toggleValue = (values: string[], value: string) =>
     values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
   const save = async () => {
@@ -1774,7 +1788,7 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
       }
       await api.updateProfile({
         ...(profile?.payload as Record<string, unknown> | undefined),
-        investment_objective: objective,
+        investment_objective: objective === displayedObjective ? savedObjective : objective,
         risk_tolerance: riskTolerance,
         drawdown_limit: parsedDrawdown,
         allowed_asset_types: assetTypes,
@@ -1783,13 +1797,13 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
       setStatus("投资设置已保存");
       onSaved();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "保存失败，请检查设置");
+      setStatus(friendlyError(error, "保存失败，请检查设置"));
     }
   };
   return <section className="control-grid">
     <Panel title="投资设置" eyebrow={`版本 ${String(profile?.version ?? "—")}`}>
       <div className="profile-form">
-        <label><span>你希望 Pia 如何帮助你</span><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="例如：稳健增值，优先控制回撤" /></label>
+        <label><span>你希望 Pia 如何帮助你</span><textarea value={objective} onChange={(event) => setObjective(event.target.value)} placeholder={`例如：${DEFAULT_INVESTMENT_OBJECTIVE_LABEL}`} /></label>
         <label><span>风险偏好</span><select value={riskTolerance} onChange={(event) => setRiskTolerance(event.target.value)}><option value="conservative">保守</option><option value="moderate">稳健</option><option value="aggressive">积极</option></select></label>
         <label><span>你能接受的最大回撤</span><div className="input-with-suffix"><input value={drawdownLimit} onChange={(event) => setDrawdownLimit(event.target.value)} inputMode="decimal" /><em>小数，例如 0.15 = 15%</em></div></label>
         <fieldset><legend>允许研究的资产</legend><div className="choice-grid">{[["stock", "股票"], ["etf", "ETF"]].map(([value, label]) => <button type="button" aria-pressed={assetTypes.includes(value)} className={`choice-chip ${assetTypes.includes(value) ? "selected" : ""}`} key={value} onClick={() => setAssetTypes(toggleValue(assetTypes, value))}><span><CheckIcon size={16} aria-hidden="true" /></span>{label}</button>)}</div></fieldset>
@@ -1810,12 +1824,12 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
 
 const localCredentialSettings = {
   deepseek: {
-    title: "DeepSeek", subtitle: "Local 模型凭据", id: "deepseek-api-key", label: "API Key", secretName: "Key",
+    title: "DeepSeek", subtitle: "本地模型凭据", id: "deepseek-api-key", label: "API 密钥", secretName: "API 密钥",
     environment: "DEEPSEEK_API_KEY", placeholder: "sk-...", read: api.deepseekCredential,
     save: api.saveDeepseekCredential, clear: api.clearDeepseekCredential,
   },
   tushare: {
-    title: "Tushare", subtitle: "Local 行情数据", id: "tushare-token", label: "Token", secretName: "Token",
+    title: "Tushare", subtitle: "本地行情数据", id: "tushare-token", label: "访问令牌", secretName: "访问令牌",
     environment: "TUSHARE_TOKEN", placeholder: "输入 Tushare Token", read: api.tushareCredential,
     save: api.saveTushareCredential, clear: api.clearTushareCredential,
   },
@@ -1974,7 +1988,7 @@ function DataHealthView({ health, syncResult, onSyncResult }: {
         : tushareDaily.length ? " Tushare 股票日线请求失败，请核对 Token 权限和行情入库时间。" : "";
       setStatus(summary + dailyStatus);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "市场数据同步失败");
+      setStatus(friendlyError(error, "市场数据同步失败"));
     }
   };
   const toggleScheduler = async () => {
@@ -1983,7 +1997,7 @@ function DataHealthView({ health, syncResult, onSyncResult }: {
       else await api.startScheduler();
       setStatus("调度状态已更新");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "调度状态更新失败");
+      setStatus(friendlyError(error, "调度状态更新失败"));
     }
   };
   const marketQuality = (syncResult?.market_quality as Record<string, unknown> | undefined) ?? {};
@@ -2003,8 +2017,8 @@ const auditEventLabels: Record<string, string> = {
   DATA_SNAPSHOT_READY: "数据快照就绪",
   EVIDENCE_SAVED: "保存证据",
   RULES_EVALUATED: "完成规则检查",
-  AGENT_STARTED: "Agent 开始分析",
-  AGENT_COMPLETED: "Agent 完成分析",
+  AGENT_STARTED: "开始分析",
+  AGENT_COMPLETED: "分析完成",
   DECISION_SYNTHESIZED: "生成研究结论",
   HUMAN_APPROVAL_REQUESTED: "等待人工审批",
   APPROVAL_RECORDED: "保存审批记录",
@@ -2095,7 +2109,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
           return <p className="rationale" key={item}><span>•</span>{reason ? ruleReasonLabel(reason) : item.replace(/^Research coverage missing: /, "研究覆盖缺失：")}</p>;
         }) : <EmptyState message={decision ? "暂无线索摘要，请查看来源和研究过程。" : "等待结构化结论"} />}
         {processItems.length > 0 && <details className="rationale-process"><summary>研究过程记录 ({processItems.length})</summary>
-          {processItems.map((item) => <p key={item}>{item}</p>)}
+          {processItems.map((item) => <p key={item}>{researchAgentLabel(item.replace(/ observations recorded in task trace\.$/, ""))}：结果已记录在研究过程中。</p>)}
         </details>}
       </Panel>
       <Panel title="规则检查" eyebrow={rules?.rule_snapshot_id ?? "等待审核"}>
@@ -2139,14 +2153,14 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
     <AgentTimelineChart
       trace={detail.trace}
       asOf={String(detail.task.target.as_of ?? "—")}
-      source={String(detail.task.data_snapshot_id ?? "task snapshot")}
+      source={String(detail.task.data_snapshot_id ?? "任务快照")}
     />
     <Panel title="研究过程" eyebrow={`${detail.trace.length} 次运行`} wide>
       <span id="research-trace" />
       <div className="trace-list">{detail.trace.map((trace) => <TraceRowView key={trace.id ?? trace.agent_name} trace={trace} toolCalls={(detail.tool_calls ?? []).filter((call) => call.agent_run_id === trace.id)} />)}</div>
       {detail.llm_usage && detail.llm_usage.records > 0 && <div className="trace-usage">
         <span>模型用量</span>
-        <strong>{detail.llm_usage.total_tokens.toLocaleString()} tokens</strong>
+        <strong>{detail.llm_usage.total_tokens.toLocaleString("zh-CN")} 个词元</strong>
         <small>{detail.llm_usage.request_count} 次请求 · ${detail.llm_usage.cost_usd.toFixed(4)}</small>
       </div>}
       {detail.llm_ledger && <p className="form-hint">费用 ${detail.llm_ledger.known_cost_usd} · 保守占用 ${detail.llm_ledger.conservative_reserved_usd} · {detail.llm_ledger.unknown_count} 次费用未知 · 日预算按 UTC 结算</p>}
@@ -2288,7 +2302,7 @@ function DebateView({ debate }: { debate: Record<string, Record<string, unknown>
   return <div className="debate-grid">{rows.map(([agent, output]) => {
     const points = Array.isArray(output.points) ? output.points : [];
     const unresolved = Array.isArray(output.unresolved_questions) ? output.unresolved_questions : [];
-    return <article className="debate-case" key={agent}><strong>{agent}</strong><span>{String(output.stance ?? output.verdict ?? "")}</span>{points.map((point) => <p key={String(point)}>• {String(point)}</p>)}{unresolved.map((question) => <small key={String(question)}>待回答：{String(question)}</small>)}</article>;
+    return <article className="debate-case" key={agent}><strong>{researchAgentLabel(agent)}</strong><span>{localizedLabel({ bull: "看多", bear: "看空" }, output.stance ?? output.verdict, "")}</span>{points.map((point) => <p key={String(point)}>• {String(point)}</p>)}{unresolved.map((question) => <small key={String(question)}>待回答：{String(question)}</small>)}</article>;
   })}</div>;
 }
 
@@ -2304,6 +2318,9 @@ const ruleReasonLabels: Record<string, string> = {
   DRAWDOWN_LIMIT: "组合回撤触及限制",
   DRAWDOWN_WARNING: "组合回撤触及预警阈值",
   EVIDENCE_INSUFFICIENT: "证据条数未达到最低要求",
+  UNIVERSE_REJECTED: "标的不在允许研究范围内",
+  NEW_LISTING: "标的尚未达到最短上市观察期",
+  LOW_LIQUIDITY: "标的成交额低于最低要求",
 };
 
 function ruleReasonLabel(reason: RuleReason) {
@@ -2330,7 +2347,7 @@ function ruleComparison(reason: RuleReason) {
     "POSITION_LIMIT_EXCEEDED", "ETF_POSITION_LIMIT", "SECTOR_CONCENTRATION", "DRAWDOWN_LIMIT",
     "DRAWDOWN_WARNING", "RISK_REVIEW_FAILED", "MARKET_VOLATILITY_FAILED", "MARKET_CONDITION_FAILED",
   ].includes(code) && typeof actual === "number" && threshold;
-  const labels = { ...qualityLabels, ...trendLabels };
+  const labels = { ...qualityLabels, ...trendLabels, eligible: "符合范围要求", "eligible for the user's Profile": "符合投资设置" };
   const actualLabel = ratio ? rulePercent(actual) : localizedLabel(labels, actual);
   const expectedLabel = threshold
     ? `${threshold[1].replace("<=", "≤").replace(">=", "≥")} ${ratio ? rulePercent(Number(threshold[2])) : threshold[2]}`
@@ -2361,7 +2378,7 @@ function RuleList({ rules }: { rules?: RuleResult }) {
 
 function EvidenceRow({ evidence, onCopyLink }: { evidence: Evidence; onCopyLink: () => void }) {
   const quality = evidenceQuality(evidence);
-  const usedBy = evidence.used_by?.length ? evidence.used_by.join(" · ") : "尚未关联研究过程";
+  const usedBy = evidence.used_by?.length ? evidence.used_by.map(researchAgentLabel).join(" · ") : "尚未关联研究过程";
   return <article id={`evidence-${evidence.id}`} className="evidence-row" tabIndex={0} aria-label={`依据：${evidence.title}`}>
     <div className="evidence-icon"><ArrowUpRightIcon size={16} aria-hidden="true" /></div>
     <div>
@@ -2377,7 +2394,7 @@ function EvidenceRow({ evidence, onCopyLink }: { evidence: Evidence; onCopyLink:
 
 function TraceRowView({ trace, toolCalls }: { trace: TraceRow; toolCalls: Array<Record<string, unknown>> }) {
   return <details className="trace-entry">
-    <summary className="trace-row"><CaretRightIcon className="trace-chevron" size={16} aria-hidden="true" /><div><strong>{trace.agent_name}</strong><span>{formatDate(trace.started_at)}</span></div><StatusBadge status={trace.status} /><small>{trace.finished_at ? `${Math.max(1, Math.round((new Date(trace.finished_at).getTime() - new Date(trace.started_at).getTime())))} ms` : "—"}{trace.token_usage ? ` · ${trace.token_usage} tokens` : ""}</small></summary>
+    <summary className="trace-row"><CaretRightIcon className="trace-chevron" size={16} aria-hidden="true" /><div><strong>{researchAgentLabel(trace.agent_name)}</strong><span>{formatDate(trace.started_at)}</span></div><StatusBadge status={trace.status} /><small>{trace.finished_at ? `${Math.max(1, Math.round((new Date(trace.finished_at).getTime() - new Date(trace.started_at).getTime())))} 毫秒` : "—"}{trace.token_usage ? ` · ${trace.token_usage} 个词元` : ""}</small></summary>
     <div className="trace-expanded">
       <div><span className="eyebrow">工具调用</span><strong>{toolCalls.length}</strong></div>
       {toolCalls.map((call) => <div className="trace-tool" key={String(call.id)}><strong>{String(call.tool_name)}</strong><StatusBadge status={String(call.status ?? "DONE")} /></div>)}
