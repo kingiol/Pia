@@ -888,7 +888,8 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     />;
   }
 
-  const showMobileDetail = Boolean(selectedId && mobileDetailOpen && (view === "Research" || view === "Overview"));
+  const isResearchWorkspace = view === "Overview" || view === "Research";
+  const showMobileDetail = Boolean(selectedId && mobileDetailOpen && isResearchWorkspace);
   const showWindowTitlebar = isTauriRuntime() && navigator.userAgent.includes("Macintosh");
   return (
     <div className={`shell${showWindowTitlebar ? " shell--macos" : ""}`}>
@@ -923,7 +924,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         </div>
       </aside>
 
-      <main className={`main${showMobileDetail ? " research-detail-open" : ""}`}>
+      <main className={`main${isResearchWorkspace ? " main--research" : ""}${showMobileDetail ? " research-detail-open" : ""}`}>
         <header className="topbar">
           <div className="page-heading">
             <h1 tabIndex={-1}>{view === "Overview" ? "研究总览" : nav.find(([, key]) => key === view)?.[0] ?? view}</h1>
@@ -947,7 +948,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
             </div>
             <button className="icon-button notification-button" title={`通知 · ${unreadNotifications} 条未读`} aria-label={`通知，${unreadNotifications} 条未读`} onClick={() => setView("Notifications")}><BellIcon size={16} aria-hidden="true" />{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span> : null}</button>
             <button className="icon-button" title="刷新" aria-label="刷新" onClick={() => void refresh()}><ArrowClockwiseIcon size={16} aria-hidden="true" /></button>
-            <button className={`primary-button${view === "Overview" || view === "Research" ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />{health?.provider?.provider_id === "fixture" ? "开始演示复盘" : "开始今日复盘"}</button>
+            <button className={`primary-button${isResearchWorkspace ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />{health?.provider?.provider_id === "fixture" ? "开始演示复盘" : "开始今日复盘"}</button>
           </div>
         </header>
 
@@ -961,8 +962,8 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
 
         {view === "Overview" && <section className="metrics" aria-label="研究统计">
           <div className="metric"><span>进行中的研究</span><strong>{counts.running}</strong><small>实时更新进度</small></div>
-          <div className="metric"><span>等你确认</span><strong>{counts.approval}</strong><small>需要人工判断</small></div>
-          <div className="metric"><span>被规则拦截</span><strong>{counts.blocked}</strong><small>先解决风险再行动</small></div>
+          <div className="metric"><span>等你确认</span><strong className={counts.approval > 0 ? "metric-warning" : undefined}>{counts.approval}</strong><small>需要人工判断</small></div>
+          <div className="metric"><span>被规则拦截</span><strong className={counts.blocked > 0 ? "metric-danger" : undefined}>{counts.blocked}</strong><small>先解决风险再行动</small></div>
           <div className="metric"><span>当前规则</span><strong>{String((rules as { version?: unknown } | null)?.version ?? "v1")}</strong><small>每次研究固定版本</small></div>
         </section>}
 
