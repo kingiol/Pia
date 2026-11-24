@@ -19,6 +19,7 @@ class DecisionJournal:
         self,
         *,
         user_id: str = "default",
+        task_id: str | None = None,
         symbol: str | None = None,
         intent: str | None = None,
         outcome_status: str | None = None,
@@ -37,6 +38,7 @@ class DecisionJournal:
 
         items = self._collect(
             user_id=user_id,
+            task_id=task_id,
             symbol=normalized_symbol,
             intent=normalized_intent,
             outcome_status=normalized_outcome,
@@ -373,6 +375,7 @@ class DecisionJournal:
         self,
         *,
         user_id: str,
+        task_id: str | None = None,
         symbol: str | None = None,
         intent: str | None = None,
         outcome_status: str | None = None,
@@ -383,7 +386,12 @@ class DecisionJournal:
         limit: int | None = 100,
     ) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
-        for task in self.db.list_tasks(user_id):
+        if task_id:
+            selected_task = self.db.get_task(task_id)
+            tasks = [selected_task] if selected_task and selected_task.user_id == user_id else []
+        else:
+            tasks = self.db.list_tasks(user_id)
+        for task in tasks:
             if cursor_key and (task.created_at, task.id) >= cursor_key:
                 continue
             if from_date and task.created_at < from_date:

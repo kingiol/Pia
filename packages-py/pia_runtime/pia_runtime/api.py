@@ -175,6 +175,7 @@ def serve(
                     }
                     return self._send(200, runtime.list_journal(
                         **filters,
+                        task_id=query.get("task_id", [None])[0],
                         cursor=query.get("cursor", [None])[0],
                         limit=int(query.get("limit", ["50"])[0]),
                     ))
@@ -238,10 +239,7 @@ def serve(
                         snapshot = runtime.db.get_latest_portfolio_snapshot(user_id)
                     return self._send(200, snapshot or {"status": "unavailable"})
                 if path == "/api/market":
-                    detail = runtime.db.fetchone(
-                        "SELECT payload_json FROM market_snapshots ORDER BY as_of DESC LIMIT 1"
-                    )
-                    return self._send(200, json.loads(detail["payload_json"]) if detail else {"status": "unavailable"})
+                    return self._send(200, runtime.market_workspace())
                 if path == "/api/candidates":
                     query = parse_qs(urlparse(self.path).query)
                     return self._send(200, runtime.scan_candidates(

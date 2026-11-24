@@ -8,9 +8,9 @@ Pia opens with a five-step checklist:
 投资方式 -> 持仓 -> 规则 -> 数据 -> 第一次收盘复盘
 ```
 
-Finish the highlighted next step before starting a review. The workspace shows
-whether the current snapshot is live data or replay data; replay data is for
-checking the workflow and must not be treated as live market readiness.
+Use 「体验演示复盘」 to inspect a sample result before importing holdings. The
+preview uses sample data and does not create research or journal records. For a
+personal review, follow the highlighted setup steps.
 
 ## 2. Start the local workspace
 
@@ -38,10 +38,10 @@ save a new version. Existing research keeps its original inputs and rules.
 
 ## 4. Run research
 
-Start today's close review after the close or let the scheduler dispatch a
-MarketClose event. The manual review uses the current Shanghai date in live
-mode and the demo date in fixture mode. Open a stored task to replay the inputs
-from an earlier session. Follow the task timeline:
+The manual review shows the proposed close date. The runtime uses its configured
+close time and the cached trading calendar. The UI flags estimates when the
+calendar is missing. Fixture mode uses the demo date. The scheduler can also
+dispatch a MarketClose event. Open a stored task to replay its original inputs.
 
 ```text
 event -> data snapshot -> agents -> debate -> risk review -> decision
@@ -54,9 +54,10 @@ expiry state. A stale or unavailable snapshot blocks a new action.
 
 Compare the market date and portfolio date in the research result, then open
 the applicable rule and evidence. A result awaiting review can be marked for
-watch, sent for further research, or dismissed. Use the retrospective form to
-record what you did, including why you took no action. Open the Decision
-Journal to find the record and replay the original research inputs.
+watch, sent for further research, or dismissed. Use 「记录不行动」 beside a
+completed result to save why you took no action. Use the retrospective form to
+record other actions or subsequent outcomes. 「查看本次决策日志」 opens the
+entry for that research.
 
 ## 6. Recover a failed task
 

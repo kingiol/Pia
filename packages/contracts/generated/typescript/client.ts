@@ -411,6 +411,7 @@ export class PiaApiClient {
   }
 
   journal(filters: {
+    task_id?: string;
     symbol?: string;
     intent?: string;
     outcome_status?: string;

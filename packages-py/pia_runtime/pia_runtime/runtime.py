@@ -8,7 +8,7 @@ import threading
 import time
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -1512,6 +1512,44 @@ class PiaRuntime:
                 "user_id": user_id,
             }, user_id=user_id)
         return snapshot
+
+    def market_workspace(self, now: datetime | None = None) -> dict[str, Any]:
+        latest = self.db.fetchone(
+            """SELECT payload_json FROM market_snapshots
+               ORDER BY as_of DESC, observed_at DESC, id DESC LIMIT 1"""
+        )
+        market = json.loads(latest["payload_json"]) if latest else {"status": "unavailable"}
+        if self.settings.data_provider == "fixture":
+            return market
+
+        current = (now or datetime.now(self.scheduler.timezone)).astimezone(self.scheduler.timezone)
+        cutoff = current.date()
+        if current.time() < self.scheduler.close_time:
+            cutoff -= timedelta(days=1)
+
+        days = self.analytics.verified_trading_days(
+            (cutoff - timedelta(days=14)).isoformat(), cutoff.isoformat(),
+        )
+        # Weekends are known to be closed. A missing weekday is only an estimate.
+        for offset in range(15):
+            day = cutoff - timedelta(days=offset)
+            day_key = day.isoformat()
+            if days.get(day_key, day.weekday() < 5):
+                market["review_session"] = {
+                    "as_of": day_key,
+                    "calendar_verified": day_key in days,
+                }
+                break
+
+        verified = self.db.fetchone(
+            """SELECT as_of, observed_at, source FROM market_snapshots
+               WHERE as_of<=? AND source<>'fixture' AND quality='verified'
+               ORDER BY as_of DESC, observed_at DESC, id DESC LIMIT 1""",
+            (cutoff.isoformat(),),
+        )
+        if verified:
+            market["last_verified"] = {key: verified[key] for key in ("as_of", "observed_at", "source")}
+        return market
 
     def sync_market_data(
         self,

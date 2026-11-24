@@ -7,6 +7,7 @@ import time
 import unittest
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,6 +25,47 @@ from pia_runtime.runtime import PiaRuntime
 
 
 class RuntimeTest(unittest.TestCase):
+    def test_market_workspace_uses_the_last_close_and_keeps_last_verified_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = PiaRuntime(Settings(
+                data_provider="akshare",
+                db_path=root / "pia.sqlite3",
+                analytics_db_path=root / "pia.duckdb",
+                autostart_tasks=False,
+            ))
+            try:
+                runtime.db.save_market_snapshot({
+                    "snapshot_id": "verified-friday",
+                    "as_of": "2026-11-20",
+                    "observed_at": "2026-11-20T15:20:00+08:00",
+                    "source": "akshare",
+                    "quality": "verified",
+                })
+                runtime.db.save_market_snapshot({
+                    "snapshot_id": "partial-monday",
+                    "as_of": "2026-11-23",
+                    "observed_at": "2026-11-23T15:20:00+08:00",
+                    "source": "akshare",
+                    "quality": "partial",
+                })
+                runtime.analytics.save_trading_calendar([
+                    {"trade_date": day, "is_open": is_open, "quality": "verified",
+                     "provider_id": "akshare", "snapshot_id": "exchange-calendar"}
+                    for day, is_open in (("2026-11-20", True), ("2026-11-23", False))
+                ])
+                before_close = runtime.market_workspace(datetime.fromisoformat("2026-11-23T14:00:00+08:00"))
+                after_close = runtime.market_workspace(datetime.fromisoformat("2026-11-23T16:00:00+08:00"))
+                for result in (before_close, after_close):
+                    self.assertEqual(result["review_session"], {"as_of": "2026-11-20", "calendar_verified": True})
+                    self.assertEqual(result["last_verified"]["as_of"], "2026-11-20")
+                self.assertEqual(after_close["snapshot_id"], "partial-monday")
+
+                next_close = runtime.market_workspace(datetime.fromisoformat("2026-11-24T16:00:00+08:00"))
+                self.assertEqual(next_close["review_session"], {"as_of": "2026-11-24", "calendar_verified": False})
+            finally:
+                runtime.close()
+
     def test_watchlist_append_preserves_symbols_and_is_user_scoped(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = PiaRuntime(Settings(db_path=Path(directory) / "pia.sqlite3", autostart_tasks=False))

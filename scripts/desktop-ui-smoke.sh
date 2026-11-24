@@ -19,6 +19,7 @@ cp -R tests/fixtures "$fixtures"
 cleanup() {
   "$PWCLI" --session "$session" close >/dev/null 2>&1 || true
   kill "${vite_pid:-}" "${runtime_pid:-}" 2>/dev/null || true
+  wait "${vite_pid:-}" "${runtime_pid:-}" 2>/dev/null || true
   rm -rf "$root_tmp"
 }
 trap cleanup EXIT
@@ -31,12 +32,14 @@ PIA_DB_PATH="$root_tmp/pia.sqlite3" \
 PIA_DUCKDB_PATH="$root_tmp/pia.duckdb" \
 PIA_FIXTURE_DIR="$fixtures" \
 PIA_DATA_PROVIDER=fixture \
+PIA_CREDENTIAL_SERVICE="com.pia.ui-smoke" \
 PIA_AUTOSTART_TASKS=1 \
   "$PWD/scripts/python.sh" -m pia_runtime.cli serve >"$root_tmp/runtime.log" 2>&1 &
 runtime_pid=$!
 
 VITE_API_BASE="http://127.0.0.1:${api_port}/api" \
-  pnpm run dev -- --host 127.0.0.1 --port "$web_port" >"$root_tmp/vite.log" 2>&1 &
+VITE_DESKTOP_LOCAL_ONLY=1 \
+  pnpm exec vite --config apps/desktop/vite.config.ts --host 127.0.0.1 --port "$web_port" >"$root_tmp/vite.log" 2>&1 &
 vite_pid=$!
 
 for _ in $(seq 1 40); do
@@ -49,76 +52,102 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
-"$PWCLI" --session "$session" open "http://127.0.0.1:${web_port}/" >/dev/null
-ui_code_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.getByRole('button', {name: '+ New review'}).click(); await page.getByText('POSITION_LIMIT_EXCEEDED', {exact: true}).waitFor({timeout: 10000}); }" 2>&1)" || {
-  echo "$ui_code_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
+cd "$root_tmp"
+"$PWCLI" --session "$session" open "http://127.0.0.1:${web_port}/" --browser chrome >/dev/null
+
+read -r -d '' flow <<'JS' || true
+async page => {
+  const button = name => page.getByRole("button", { name, exact: true });
+  const nav = page.getByRole("navigation", { name: "主导航" });
+  const stockResearch = page.getByRole("heading", { name: "600000.SH 研究" });
+  const search = page.getByRole("searchbox", { name: "搜索名称、代码或研究" });
+
+  await button("体验演示复盘").click();
+  const demo = page.getByRole("dialog", { name: "演示复盘" });
+  await demo.getByText("查看示例依据").click();
+  await demo.getByText(/示例组合总值/).waitFor();
+  await demo.getByRole("button", { name: "关闭" }).click();
+
+  await page.route("**/api/profile", route => route.abort());
+  await button("刷新").click();
+  await page.getByText("部分准备信息暂不可用。").waitFor();
+  await page.route("**/api/tasks", route => route.request().method() === "GET" ? route.abort() : route.continue());
+  await button("开始演示复盘").click();
+  await page.waitForURL("**/research/task_*");
+  await page.getByRole("heading", { name: "收盘市场复盘" }).waitFor();
+  await page.getByText("研究列表暂不可用。", { exact: false }).waitFor();
+  await page.getByText("示例持仓", { exact: false }).first().waitFor();
+  await page.getByText(/实际 37.32% · 要求 ≤ 10%/).first().waitFor();
+  const reviewId = new URL(page.url()).pathname.split("/").at(-1);
+  await page.unroute("**/api/tasks");
+  await page.unroute("**/api/profile");
+
+  await button("记录不行动").click();
+  const reason = "Position limit exceeded";
+  await page.getByLabel("不行动的原因").fill(reason);
+  await page.route("**/api/tasks/*/retrospectives", route => route.abort());
+  await button("保存不行动记录").click();
+  await page.locator(".quick-retrospective").getByRole("alert").waitFor();
+  if (await page.getByLabel("不行动的原因").inputValue() !== reason) throw Error("Failed save discarded the draft");
+  await page.unroute("**/api/tasks/*/retrospectives");
+  await button("保存不行动记录").click();
+  await button("查看本次决策日志").click();
+  await page.getByRole("heading", { name: "这次研究的记录" }).waitFor();
+  await page.getByText(reason, { exact: true }).waitFor();
+  if (new URL(page.url()).searchParams.get("journal_task") !== reviewId) throw Error("Incorrect journal target");
+  await button("查看研究").click();
+  await button("原始数据").click();
+  await page.getByText(/回放输入/).first().waitFor();
+  await page.reload();
+  await page.getByRole("heading", { name: "收盘市场复盘" }).waitFor();
+  await page.getByRole("listbox", { name: "研究任务" }).press("ArrowDown");
+
+  await nav.getByRole("button", { name: "数据", exact: true }).click();
+  await button("开启调度").click();
+  await button("停止调度").click();
+  await button("开启调度").waitFor();
+  await button("同步市场数据").click();
+  await page.getByText("最近一次同步", { exact: true }).waitFor();
+
+  await nav.getByRole("button", { name: "市场", exact: true }).click();
+  await button("加入自选 600000.SH").click();
+  await button("600000.SH 已在自选").waitFor();
+  await nav.getByRole("button", { name: "自选", exact: true }).click();
+  const stock = () => page.getByRole("button", { name: /浦发银行/ });
+  await stock().click();
+  await stockResearch.waitFor();
+  const researchUrl = page.url();
+  await nav.getByRole("button", { name: "自选", exact: true }).click();
+  await stock().click();
+  await stockResearch.waitFor();
+  if (page.url() !== researchUrl) throw Error("Watchlist reopened a different task");
+  await nav.getByRole("button", { name: "市场", exact: true }).click();
+  await page.keyboard.press("Control+k");
+  if (!await search.evaluate(element => element === document.activeElement)) throw Error("Search shortcut did not focus the search box");
+  await search.fill("浦发银行");
+  await page.locator(".search-result").getByRole("button", { name: "打开研究" }).waitFor();
+  await search.press("Enter");
+  await stockResearch.waitFor();
+  if (page.url() !== researchUrl) throw Error("Search reopened a different task");
+  await page.keyboard.press("Control+p");
+  await page.getByRole("heading", { name: "持仓", exact: true }).waitFor();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (await page.evaluate(() => document.body.scrollWidth > window.innerWidth + 1)) throw Error("Mobile layout overflows horizontally");
+  await search.fill("浦发银行");
+  const popup = await page.locator(".search-results").boundingBox();
+  if (!popup || popup.x < 0 || popup.x + popup.width > 391) throw Error("Mobile search results are clipped");
+  return "DESKTOP UI SMOKE PASS";
+}
+JS
+
+result="$("$PWCLI" --session "$session" run-code "$flow" 2>&1)" || {
+  echo "$result" >&2
+  tail -60 "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
   exit 1
 }
-
-body="$("$PWCLI" --session "$session" eval "document.body.innerText")"
-grep -q "收盘市场复盘" <<<"$body"
-grep -q "POSITION_LIMIT_EXCEEDED" <<<"$body"
-grep -q "Blocked" <<<"$body"
-
-deep_link_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { const task = new URL(page.url()).searchParams.get('task'); if (!task) throw new Error('task deep link missing'); await page.reload(); await page.getByRole('option').first().waitFor({timeout: 5000}); await page.getByRole('button', {name: 'Raw data'}).waitFor({timeout: 5000}); }" 2>&1)" || {
-  echo "$deep_link_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
+if ! sed -n '/^### Result$/{n;p;}' <<<"$result" | grep -Fq 'DESKTOP UI SMOKE PASS'; then
+  echo "$result" >&2
   exit 1
-}
-
-raw_data_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.getByRole('button', {name: 'Raw data'}).click(); await page.getByText('Raw data and replay inputs').waitFor({timeout: 5000}); }" 2>&1)" || {
-  echo "$raw_data_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-
-workspace_accessibility_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.getByRole('button', {name: 'Copy evidence link'}).first().waitFor({timeout: 5000}); await page.getByText(/Used by:/).first().waitFor({timeout: 5000}); const taskList = page.getByRole('listbox', {name: 'Research tasks'}); await taskList.focus(); await taskList.press('ArrowDown'); }" 2>&1)" || {
-  echo "$workspace_accessibility_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-
-watchlist_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.getByRole('button', {name: 'W Watchlist'}).click(); await page.getByRole('heading', {name: 'Watchlists'}).waitFor({timeout: 5000}); await page.getByPlaceholder('600000.SH, 510300.SH').fill('600000.SH'); await page.getByRole('button', {name: 'Save', exact: true}).click(); await page.getByText('Watchlist saved').waitFor({timeout: 5000}); }" 2>&1)" || {
-  echo "$watchlist_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-
-rules_code_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.getByRole('button', {name: 'R Rules'}).click(); await page.getByText('Selected task gate').waitFor({timeout: 5000}); }" 2>&1)" || {
-  echo "$rules_code_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-rules_body="$("$PWCLI" --session "$session" eval "document.body.innerText")"
-grep -q "Selected task gate" <<<"$rules_body"
-grep -q "Showing the selected task's evaluated rules." <<<"$rules_body"
-
-route_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.getByRole('button', {name: 'M Market'}).click(); await page.getByRole('heading', {name: 'Market', exact: true}).waitFor({timeout: 5000}); await page.getByRole('article', {name: /Market breadth/}).waitFor({timeout: 5000}); if (new URL(page.url()).pathname !== '/market') throw new Error('market route missing'); await page.getByRole('button', {name: 'P Portfolio'}).click(); await page.getByRole('heading', {name: 'Portfolio', exact: true}).waitFor({timeout: 5000}); await page.getByRole('article', {name: /Portfolio exposure/}).waitFor({timeout: 5000}); await page.getByRole('button', {name: 'R Research'}).click(); await page.getByRole('heading', {name: 'Research', exact: true}).waitFor({timeout: 5000}); await page.getByRole('article', {name: /Agent timeline/}).waitFor({timeout: 5000}); if (!new URL(page.url()).pathname.startsWith('/research/')) throw new Error('research task route missing'); }" 2>&1)" || {
-  echo "$route_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-
-shortcut_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.keyboard.press('Control+k'); const search = page.getByRole('textbox', {name: 'Search tasks or symbols'}); await search.waitFor({timeout: 5000}); if (!(await search.evaluate(el => el === document.activeElement))) throw new Error('search shortcut did not focus search'); await page.keyboard.press('Control+p'); await page.getByRole('heading', {name: 'Portfolio', exact: true}).waitFor({timeout: 5000}); await page.keyboard.press('Control+Enter'); await page.getByText('POSITION_LIMIT_EXCEEDED', {exact: true}).waitFor({timeout: 10000}); }" 2>&1)" || {
-  echo "$shortcut_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-
-mobile_code_output="$("$PWCLI" --session "$session" run-code \
-  "async page => { await page.setViewportSize({width: 390, height: 844}); const dimensions = await page.evaluate(() => ({body: document.body.scrollWidth, viewport: window.innerWidth})); if (dimensions.body > dimensions.viewport + 1) throw new Error('mobile layout overflows horizontally: ' + JSON.stringify(dimensions)); await page.getByRole('button', {name: '+ New review'}).isVisible(); }" 2>&1)" || {
-  echo "$mobile_code_output" >&2
-  cat "$root_tmp/runtime.log" "$root_tmp/vite.log" >&2
-  exit 1
-}
-
+fi
 echo "DESKTOP UI SMOKE PASS"
