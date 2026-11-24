@@ -8,7 +8,9 @@ import type {
   OrderPreviewResponse,
   OrderRequest,
   PaperOrderResponse,
+  SchedulerResponse,
 } from "../../../packages/contracts/generated/typescript/client";
+export type { SchedulerResponse };
 
 export type TaskStatus =
   | "QUEUED"
@@ -205,6 +207,18 @@ export type TaskInput = {
   fixture?: { market?: string; portfolio?: string };
 };
 
+export type MarketWorkspace = Record<string, unknown> & {
+  snapshot_id?: string;
+  as_of?: string;
+  observed_at?: string;
+  source?: string;
+  provider_id?: string;
+  quality?: string;
+  instruments?: Array<{ symbol?: string; name?: string }>;
+  review_session?: { as_of: string; calendar_verified: boolean };
+  last_verified?: { as_of: string; observed_at: string; source: string };
+};
+
 function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
   return {
     ...value,
@@ -246,7 +260,7 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
       runtime: string;
       provider: { status: string; provider_id?: string };
       llm: { model: string; credentials_configured: boolean };
-      scheduler?: { enabled: boolean; timezone: string; close_time: string; last_dispatched_date: string | null };
+      scheduler?: SchedulerResponse;
     }>,
     providers: () => contractClient.providers(),
     scheduler: () => contractClient.scheduler(),
@@ -270,6 +284,7 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
       contractClient.taskFlow(id, afterSeq, limit, snapshotSeq),
     taskData: (id: string) => contractClient.taskData(id) as Promise<TaskDataResponse>,
     journal: (filters: {
+      task_id?: string;
       symbol?: string;
       intent?: string;
       outcome_status?: string;
@@ -319,7 +334,7 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
     rules: () => contractClient.rules(),
     updateRules: (rules: Record<string, unknown>) => contractClient.updateRules(rules),
     portfolio: () => contractClient.portfolioSnapshot(),
-    market: () => contractClient.market(),
+    market: () => contractClient.market() as Promise<MarketWorkspace>,
     candidates: (asOf: string, fixture?: string) => contractClient.candidates(asOf, fixture),
     audit: () => contractClient.audit() as Promise<{ audit: Array<Record<string, string>> }>,
     notifications: () => contractClient.notifications(),
@@ -357,7 +372,6 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
     createTask: (input: TaskInput) => {
       const target: Record<string, unknown> = {
         as_of: input.asOf,
-        symbols: ["600000.SH", "510300.SH"],
       };
       if (input.marketSnapshotId) target._market_snapshot_id = input.marketSnapshotId;
       return contractClient.createTask({

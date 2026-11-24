@@ -69,6 +69,10 @@ class DecisionJournalTest(unittest.TestCase):
                     len(runtime.list_journal(user_id="other-user")["items"]),
                     1,
                 )
+                focused = runtime.list_journal(task_id=first.id)["items"]
+                self.assertEqual([item["decision_record"]["task"]["id"] for item in focused], [first.id])
+                self.assertEqual(focused[0]["retrospectives"][0]["action_taken"], "NOT_TAKEN")
+                self.assertEqual(runtime.list_journal(task_id=first.id, user_id="other-user")["items"], [])
             finally:
                 runtime.close()
 

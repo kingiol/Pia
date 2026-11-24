@@ -445,6 +445,23 @@ class AnalyticsStore:
         with self._connection() as connection:
             return int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
+    def verified_trading_days(self, start: str, end: str) -> dict[str, bool]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT CAST(trade_date AS VARCHAR), is_open
+                FROM normalized_trading_calendar
+                WHERE trade_date BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
+                  AND quality='verified' AND provider_id<>'fixture'
+                ORDER BY observed_at DESC, snapshot_id DESC
+                """,
+                [start, end],
+            ).fetchall()
+        days: dict[str, bool] = {}
+        for trade_date, is_open in rows:
+            days.setdefault(trade_date, is_open)
+        return days
+
     def checkpoint(self) -> None:
         with self._lock:
             connection = self._connect()

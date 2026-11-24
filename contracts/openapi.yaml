@@ -349,6 +349,9 @@ paths:
   /api/journal:
     get:
       parameters:
+        - name: task_id
+          in: query
+          schema: {type: string}
         - name: symbol
           in: query
           schema: {type: string}
@@ -518,12 +521,26 @@ paths:
     get:
       responses:
         "200":
-          description: Latest market snapshot
+          description: Latest market snapshot, with the proposed close-review session and latest verified live snapshot when available
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
+                properties:
+                  review_session:
+                    type: object
+                    required: [as_of, calendar_verified]
+                    properties:
+                      as_of: {type: string, format: date}
+                      calendar_verified: {type: boolean}
+                  last_verified:
+                    type: object
+                    required: [as_of, observed_at, source]
+                    properties:
+                      as_of: {type: string, format: date}
+                      observed_at: {type: string, format: date-time}
+                      source: {type: string}
   /api/audit:
     get:
       responses:
