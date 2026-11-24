@@ -1,3 +1,4 @@
+import { createContext, useContext } from "react";
 import { PiaApiClient } from "../../../packages/contracts/generated/typescript/client";
 export type { CandidateListResponse, LocalCredentialStatus } from "../../../packages/contracts/generated/typescript/client";
 import type { DeviceRegistration } from "../../../packages/contracts/generated/typescript/models";
@@ -204,14 +205,6 @@ export type TaskInput = {
   fixture?: { market?: string; portfolio?: string };
 };
 
-let API_BASE = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
-  ? "" : import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765/api";
-let contractClient = new PiaApiClient({
-  baseUrl: API_BASE,
-  token: import.meta.env.VITE_API_TOKEN as string | undefined,
-  ...(API_BASE ? {} : { fetcher: async () => { throw new Error("桌面运行时尚未连接。"); } }),
-});
-
 function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
   return {
     ...value,
@@ -227,205 +220,225 @@ function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
   } as TaskDetail;
 }
 
-export const api = {
-  configure: (baseUrl: string, token?: string) => {
-    API_BASE = baseUrl.replace(/\/$/, "");
-    contractClient = new PiaApiClient({ baseUrl: API_BASE, token });
-  },
-  setToken: (token?: string) => contractClient.setToken(token),
-  getToken: () => contractClient.getToken(),
-  deepseekCredential: () => contractClient.deepseekCredential(),
-  saveDeepseekCredential: (apiKey: string) => contractClient.saveDeepseekCredential(apiKey),
-  clearDeepseekCredential: () => contractClient.clearDeepseekCredential(),
-  tushareCredential: () => contractClient.tushareCredential(),
-  saveTushareCredential: (token: string) => contractClient.saveTushareCredential(token),
-  clearTushareCredential: () => contractClient.clearTushareCredential(),
-  health: () => contractClient.health() as Promise<{
-    status: string;
-    runtime: string;
-    provider: { status: string; provider_id?: string };
-    llm: { model: string; credentials_configured: boolean };
-    scheduler?: { enabled: boolean; timezone: string; close_time: string; last_dispatched_date: string | null };
-  }>,
-  providers: () => contractClient.providers(),
-  scheduler: () => contractClient.scheduler(),
-  syncData: (asOf: string, symbols: string[] = []) =>
-    contractClient.syncData(asOf, symbols),
-  previewOrder: (order: OrderRequest) =>
-    contractClient.previewOrder(order) as Promise<OrderPreviewResponse>,
-  paperOrder: (order: OrderRequest) =>
-    contractClient.paperOrder(order) as Promise<PaperOrderResponse>,
-  startScheduler: () => contractClient.startScheduler(),
-  stopScheduler: () => contractClient.stopScheduler(),
-  tasks: () => contractClient.tasks() as Promise<{ tasks: Task[] }>,
-  task: async (id: string) => normalizeTaskDetail(await contractClient.task(id) as Partial<TaskDetail>),
-  taskContext: (id: string) => contractClient.taskContext(id),
-  exportTask: (id: string) => contractClient.exportTaskText(id),
-  screeningStrategies: () => contractClient.screeningStrategies(),
-  createCandidateScan: (asOf: string, id?: string, version?: string, fixture?: string) =>
-    contractClient.createCandidateScan(asOf, id, version, fixture),
-  replayCandidateScan: (id: string) => contractClient.replayCandidateScan(id),
-  taskFlow: (id: string, afterSeq = 0, limit = 100, snapshotSeq?: number) =>
-    contractClient.taskFlow(id, afterSeq, limit, snapshotSeq),
-  taskData: (id: string) => contractClient.taskData(id) as Promise<TaskDataResponse>,
-  journal: (filters: {
-    symbol?: string;
-    intent?: string;
-    outcome_status?: string;
-    rule_snapshot_id?: string;
-    from?: string;
-    to?: string;
-    cursor?: string;
-    limit?: number;
-  } = {}) => contractClient.journal(filters) as Promise<JournalResponse>,
-  journalSummary: (filters: {
-    symbol?: string;
-    intent?: string;
-    outcome_status?: string;
-    rule_snapshot_id?: string;
-    from?: string;
-    to?: string;
-  } = {}) => contractClient.journalSummary(filters) as Promise<JournalSummary>,
-  journalPatterns: (filters: {
-    symbol?: string;
-    intent?: string;
-    outcome_status?: string;
-    rule_snapshot_id?: string;
-    from?: string;
-    to?: string;
-  } = {}) => contractClient.journalPatterns(filters) as Promise<JournalPatterns>,
-  materializeJournalMemoryCandidate: (candidateKey: string) =>
-    contractClient.materializeJournalMemoryCandidate(candidateKey) as Promise<MemoryCandidate>,
-  reviewJournalMemoryCandidate: (
-    candidateId: string,
-    payload: {
-      action: MemoryCandidateReviewAction;
-      title?: string | null;
-      content?: string | null;
-      notes?: string;
+export function createWorkspaceApi(url: string, token?: string, signal?: AbortSignal) {
+  const baseUrl = url.replace(/\/$/, "");
+  const contractClient = new PiaApiClient({
+    baseUrl,
+    token,
+    fetcher: async (input, init) => {
+      if (!baseUrl) throw new Error("桌面运行时尚未连接。");
+      signal?.throwIfAborted();
+      return fetch(input, signal ? { ...init, signal } : init);
     },
-  ) => contractClient.reviewJournalMemoryCandidate(candidateId, payload),
-  memoryCandidateUsage: (candidateId: string) =>
-    contractClient.memoryCandidateUsage(candidateId),
-  memoryCandidateFeedback: (
-    candidateId: string,
-    payload: {
-      rating: "HELPFUL" | "NOT_HELPFUL" | "UNCERTAIN";
-      usage_id?: string | null;
-      notes?: string;
-    },
-  ) => contractClient.memoryCandidateFeedback(candidateId, payload),
-  rules: () => contractClient.rules(),
-  updateRules: (rules: Record<string, unknown>) => contractClient.updateRules(rules),
-  portfolio: () => contractClient.portfolioSnapshot(),
-  market: () => contractClient.market(),
-  candidates: (asOf: string, fixture?: string) => contractClient.candidates(asOf, fixture),
-  audit: () => contractClient.audit() as Promise<{ audit: Array<Record<string, string>> }>,
-  notifications: () => contractClient.notifications(),
-  watchlists: () => contractClient.watchlists(),
-  saveWatchlist: (name: string, symbols: string[], append?: boolean) =>
-    contractClient.saveWatchlist(name, symbols, append),
-  searchMemory: (query = "", symbol?: string, limit = 50) =>
-    contractClient.searchMemory(query, symbol, limit),
-  saveMemory: (payload: {
-    kind?: string;
-    symbol?: string | null;
-    title: string;
-    content: string;
-    source?: string;
-    as_of?: string | null;
-    observed_at?: string | null;
-    quality?: string;
-  }) => contractClient.saveMemory(payload),
-  notificationDeliveries: (id: string) => contractClient.notificationDeliveries(id),
-  registerDevice: (device: DeviceRegistration) =>
-    contractClient.registerDevice(device),
-  markNotificationRead: (id: string) =>
-    contractClient.markNotificationRead(id) as Promise<{ status: string; notification_id: string }>,
-  profile: () => contractClient.profile() as Promise<Record<string, unknown>>,
-  updateProfile: (payload: Record<string, unknown>) =>
-    contractClient.updateProfile(payload as never) as Promise<Record<string, unknown>>,
-  importPortfolio: (
-    format: "csv" | "xlsx" | "manual",
-    content: string | Array<Record<string, unknown>> | { encoding: "base64"; data: string },
-    asOf?: string,
-  ) =>
-    contractClient.importPortfolio(format, content, asOf) as Promise<{ portfolio: Record<string, unknown> }>,
-  savePortfolioPosition: (payload: Parameters<typeof contractClient.savePortfolioPosition>[0]) =>
-    contractClient.savePortfolioPosition(payload),
-  createTask: (input: TaskInput) => {
-    const target: Record<string, unknown> = {
-      as_of: input.asOf,
-      symbols: ["600000.SH", "510300.SH"],
-    };
-    if (input.marketSnapshotId) target._market_snapshot_id = input.marketSnapshotId;
-    return contractClient.createTask({
-      trigger_type: "MarketClose",
-      target,
-      ...(input.fixture ? { fixture: input.fixture } : {}),
-    }) as Promise<{ task: Task }>;
-  },
-  createResearchTask: (symbol: string, input: TaskInput) => {
-    const target: Record<string, unknown> = {
-      as_of: input.asOf,
-      symbol,
-    };
-    if (input.marketSnapshotId) target._market_snapshot_id = input.marketSnapshotId;
-    return contractClient.createTask({
-      trigger_type: "StockResearch",
-      target,
-      ...(input.fixture ? { fixture: input.fixture } : {}),
-    }) as Promise<{ task: Task }>;
-  },
-  approve: (
-    id: string,
-    action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH",
-  ) =>
-    contractClient.approve(id, action, "Reviewed in Pia Workspace").then((detail) => normalizeTaskDetail(detail as Partial<TaskDetail>)),
-  pause: (id: string) => contractClient.pause(id) as Promise<{ task: Task }>,
-  resume: (id: string) => contractClient.resume(id) as Promise<{ task: Task }>,
-  retry: (id: string) => contractClient.retry(id) as Promise<{ task: Task }>,
-  replay: (id: string) => contractClient.replay(id) as Promise<{ task: Task }>,
-  cancel: (id: string, reason?: string) => contractClient.cancel(id, reason) as Promise<{ task: Task }>,
-  takeover: (id: string, notes?: string) => contractClient.takeover(id, notes),
-  recordRetrospective: (
-    id: string,
-    payload: {
-      action_taken: string;
-      outcome: Record<string, unknown>;
-      notes?: string;
+  });
+
+  return {
+    setToken: (token?: string) => contractClient.setToken(token),
+    getToken: () => contractClient.getToken(),
+    deepseekCredential: () => contractClient.deepseekCredential(),
+    saveDeepseekCredential: (apiKey: string) => contractClient.saveDeepseekCredential(apiKey),
+    clearDeepseekCredential: () => contractClient.clearDeepseekCredential(),
+    tushareCredential: () => contractClient.tushareCredential(),
+    saveTushareCredential: (token: string) => contractClient.saveTushareCredential(token),
+    clearTushareCredential: () => contractClient.clearTushareCredential(),
+    health: () => contractClient.health() as Promise<{
+      status: string;
+      runtime: string;
+      provider: { status: string; provider_id?: string };
+      llm: { model: string; credentials_configured: boolean };
+      scheduler?: { enabled: boolean; timezone: string; close_time: string; last_dispatched_date: string | null };
+    }>,
+    providers: () => contractClient.providers(),
+    scheduler: () => contractClient.scheduler(),
+    syncData: (asOf: string, symbols: string[] = []) =>
+      contractClient.syncData(asOf, symbols),
+    previewOrder: (order: OrderRequest) =>
+      contractClient.previewOrder(order) as Promise<OrderPreviewResponse>,
+    paperOrder: (order: OrderRequest) =>
+      contractClient.paperOrder(order) as Promise<PaperOrderResponse>,
+    startScheduler: () => contractClient.startScheduler(),
+    stopScheduler: () => contractClient.stopScheduler(),
+    tasks: () => contractClient.tasks() as Promise<{ tasks: Task[] }>,
+    task: async (id: string) => normalizeTaskDetail(await contractClient.task(id) as Partial<TaskDetail>),
+    taskContext: (id: string) => contractClient.taskContext(id),
+    exportTask: (id: string) => contractClient.exportTaskText(id),
+    screeningStrategies: () => contractClient.screeningStrategies(),
+    createCandidateScan: (asOf: string, id?: string, version?: string, fixture?: string) =>
+      contractClient.createCandidateScan(asOf, id, version, fixture),
+    replayCandidateScan: (id: string) => contractClient.replayCandidateScan(id),
+    taskFlow: (id: string, afterSeq = 0, limit = 100, snapshotSeq?: number) =>
+      contractClient.taskFlow(id, afterSeq, limit, snapshotSeq),
+    taskData: (id: string) => contractClient.taskData(id) as Promise<TaskDataResponse>,
+    journal: (filters: {
+      symbol?: string;
+      intent?: string;
+      outcome_status?: string;
+      rule_snapshot_id?: string;
+      from?: string;
+      to?: string;
+      cursor?: string;
+      limit?: number;
+    } = {}) => contractClient.journal(filters) as Promise<JournalResponse>,
+    journalSummary: (filters: {
+      symbol?: string;
+      intent?: string;
+      outcome_status?: string;
+      rule_snapshot_id?: string;
+      from?: string;
+      to?: string;
+    } = {}) => contractClient.journalSummary(filters) as Promise<JournalSummary>,
+    journalPatterns: (filters: {
+      symbol?: string;
+      intent?: string;
+      outcome_status?: string;
+      rule_snapshot_id?: string;
+      from?: string;
+      to?: string;
+    } = {}) => contractClient.journalPatterns(filters) as Promise<JournalPatterns>,
+    materializeJournalMemoryCandidate: (candidateKey: string) =>
+      contractClient.materializeJournalMemoryCandidate(candidateKey) as Promise<MemoryCandidate>,
+    reviewJournalMemoryCandidate: (
+      candidateId: string,
+      payload: {
+        action: MemoryCandidateReviewAction;
+        title?: string | null;
+        content?: string | null;
+        notes?: string;
+      },
+    ) => contractClient.reviewJournalMemoryCandidate(candidateId, payload),
+    memoryCandidateUsage: (candidateId: string) =>
+      contractClient.memoryCandidateUsage(candidateId),
+    memoryCandidateFeedback: (
+      candidateId: string,
+      payload: {
+        rating: "HELPFUL" | "NOT_HELPFUL" | "UNCERTAIN";
+        usage_id?: string | null;
+        notes?: string;
+      },
+    ) => contractClient.memoryCandidateFeedback(candidateId, payload),
+    rules: () => contractClient.rules(),
+    updateRules: (rules: Record<string, unknown>) => contractClient.updateRules(rules),
+    portfolio: () => contractClient.portfolioSnapshot(),
+    market: () => contractClient.market(),
+    candidates: (asOf: string, fixture?: string) => contractClient.candidates(asOf, fixture),
+    audit: () => contractClient.audit() as Promise<{ audit: Array<Record<string, string>> }>,
+    notifications: () => contractClient.notifications(),
+    watchlists: () => contractClient.watchlists(),
+    saveWatchlist: (name: string, symbols: string[], append?: boolean) =>
+      contractClient.saveWatchlist(name, symbols, append),
+    searchMemory: (query = "", symbol?: string, limit = 50) =>
+      contractClient.searchMemory(query, symbol, limit),
+    saveMemory: (payload: {
+      kind?: string;
+      symbol?: string | null;
+      title: string;
+      content: string;
+      source?: string;
+      as_of?: string | null;
       observed_at?: string | null;
+      quality?: string;
+    }) => contractClient.saveMemory(payload),
+    notificationDeliveries: (id: string) => contractClient.notificationDeliveries(id),
+    registerDevice: (device: DeviceRegistration) =>
+      contractClient.registerDevice(device),
+    markNotificationRead: (id: string) =>
+      contractClient.markNotificationRead(id) as Promise<{ status: string; notification_id: string }>,
+    profile: () => contractClient.profile() as Promise<Record<string, unknown>>,
+    updateProfile: (payload: Record<string, unknown>) =>
+      contractClient.updateProfile(payload as never) as Promise<Record<string, unknown>>,
+    importPortfolio: (
+      format: "csv" | "xlsx" | "manual",
+      content: string | Array<Record<string, unknown>> | { encoding: "base64"; data: string },
+      asOf?: string,
+    ) =>
+      contractClient.importPortfolio(format, content, asOf) as Promise<{ portfolio: Record<string, unknown> }>,
+    savePortfolioPosition: (payload: Parameters<typeof contractClient.savePortfolioPosition>[0]) =>
+      contractClient.savePortfolioPosition(payload),
+    createTask: (input: TaskInput) => {
+      const target: Record<string, unknown> = {
+        as_of: input.asOf,
+        symbols: ["600000.SH", "510300.SH"],
+      };
+      if (input.marketSnapshotId) target._market_snapshot_id = input.marketSnapshotId;
+      return contractClient.createTask({
+        trigger_type: "MarketClose",
+        target,
+        ...(input.fixture ? { fixture: input.fixture } : {}),
+      }) as Promise<{ task: Task }>;
     },
-  ) => contractClient.recordRetrospective(id, payload),
-  subscribeTask: (id: string, onEvent: () => void) => {
-    const baseUrl = API_BASE;
-    if (!baseUrl) return () => {};
-    const token = contractClient.getToken();
-    if (!token) {
-      const source = new EventSource(`${baseUrl}/tasks/${id}/events`);
-      source.onmessage = onEvent;
-      source.addEventListener("TASK_STATUS", onEvent);
-      source.onerror = () => source.close();
-      return () => source.close();
-    }
-    const controller = new AbortController();
-    void fetch(`${baseUrl}/tasks/${id}/events`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok || !response.body) return;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (!controller.signal.aborted) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        frames.forEach((frame) => { if (frame.includes("data: ")) onEvent(); });
+    createResearchTask: (symbol: string, input: TaskInput) => {
+      const target: Record<string, unknown> = {
+        as_of: input.asOf,
+        symbol,
+      };
+      if (input.marketSnapshotId) target._market_snapshot_id = input.marketSnapshotId;
+      return contractClient.createTask({
+        trigger_type: "StockResearch",
+        target,
+        ...(input.fixture ? { fixture: input.fixture } : {}),
+      }) as Promise<{ task: Task }>;
+    },
+    approve: (
+      id: string,
+      action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH",
+    ) =>
+      contractClient.approve(id, action, "Reviewed in Pia Workspace").then((detail) => normalizeTaskDetail(detail as Partial<TaskDetail>)),
+    pause: (id: string) => contractClient.pause(id) as Promise<{ task: Task }>,
+    resume: (id: string) => contractClient.resume(id) as Promise<{ task: Task }>,
+    retry: (id: string) => contractClient.retry(id) as Promise<{ task: Task }>,
+    replay: (id: string) => contractClient.replay(id) as Promise<{ task: Task }>,
+    cancel: (id: string, reason?: string) => contractClient.cancel(id, reason) as Promise<{ task: Task }>,
+    takeover: (id: string, notes?: string) => contractClient.takeover(id, notes),
+    recordRetrospective: (
+      id: string,
+      payload: {
+        action_taken: string;
+        outcome: Record<string, unknown>;
+        notes?: string;
+        observed_at?: string | null;
+      },
+    ) => contractClient.recordRetrospective(id, payload),
+    subscribeTask: (id: string, onEvent: () => void) => {
+      if (!baseUrl || signal?.aborted) return () => {};
+      const token = contractClient.getToken();
+      if (!token) {
+        const source = new EventSource(`${baseUrl}/tasks/${id}/events`);
+        source.onmessage = onEvent;
+        source.addEventListener("TASK_STATUS", onEvent);
+        source.onerror = () => source.close();
+        return () => source.close();
       }
-    }).catch(() => undefined);
-    return () => controller.abort();
-  },
-};
+      const controller = new AbortController();
+      void fetch(`${baseUrl}/tasks/${id}/events`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      }).then(async (response) => {
+        if (!response.ok || !response.body) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() ?? "";
+          frames.forEach((frame) => { if (frame.includes("data: ")) onEvent(); });
+        }
+      }).catch(() => undefined);
+      return () => controller.abort();
+    },
+  };
+}
+
+const defaultApi = createWorkspaceApi(
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+    ? "" : import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8765/api",
+  import.meta.env.VITE_API_TOKEN as string | undefined,
+);
+
+export type WorkspaceHealth = Awaited<ReturnType<ReturnType<typeof createWorkspaceApi>["health"]>>;
+export const WorkspaceApiContext = createContext(defaultApi);
+export function useWorkspaceApi() {
+  return useContext(WorkspaceApiContext);
+}

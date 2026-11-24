@@ -16,8 +16,9 @@ First launch opens the Local workspace immediately, without a mode-selection
 screen. A segmented Local / Cloud control sits at the bottom of the left sidebar,
 below navigation. The sidebar does not display a persistent runtime-status or
 model-name row. Web does not render this control.
-Selecting Cloud opens a modal connection form over the current workspace.
-Cancel and Escape close the form without changing the active environment.
+Selecting Cloud reuses the saved session when available and opens a modal
+connection form when credentials are needed. Selecting the active Cloud mode
+opens its connection settings. Cancel and Escape keep the current environment.
 Selecting Local connects directly. Later launches restore the saved mode.
 
 ```text
@@ -38,7 +39,7 @@ Cloud accepts HTTPS endpoints, or HTTP on loopback for development. The form
 accepts a deployment root or an API base ending in `/api`, including a proxy
 prefix. Credentials, query parameters and fragments in the address are rejected.
 The endpoint must report `runtime: cloud`, and the token must pass an authenticated
-task-list request before the connection is saved.
+scheduler status request before the connection is saved.
 
 The selected mode and Cloud URL are saved in local storage. The token is saved
 only in session storage and bound to the exact API base. Debug and Release use
@@ -48,10 +49,10 @@ error, and allows reconnecting through the Cloud control or switching to Local.
 A Cloud token is never restored into
 the Local client, including from the Web client's legacy token keys.
 
-Applying a connection reloads the workspace to dispose of requests, subscriptions
-and UI state from the previous environment. A failed connection leaves the saved
-environment intact. Local startup waits for the sidecar before fetching workspace
-data; the sidebar and homepage remain visible during startup or connection failure.
+Applying a connection keeps the active page and clears data and subscriptions from
+the previous environment. Navigation remains available while the target connection
+is checked. Once connected, Desktop loads the active page's data. A failed
+connection displays a retry action and preserves the last saved connection.
 
 ## Local Credentials
 

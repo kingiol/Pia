@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRightIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { RunFlow as Flow } from "../../../../packages/contracts/generated/typescript/models";
-import { api } from "../api";
+import { useWorkspaceApi } from "../api";
 import { researchAgentLabel } from "../researchLabels";
 
 const stageLabels: Record<string, string> = {
@@ -39,6 +39,7 @@ function nodeLabel(node: Flow["nodes"][number]) {
 }
 
 export function RunFlow({ taskId, revision }: { taskId: string; revision: number }) {
+  const api = useWorkspaceApi();
   const [flow, setFlow] = useState<Flow | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -67,7 +68,7 @@ export function RunFlow({ taskId, revision }: { taskId: string; revision: number
     };
     void load().catch(() => { if (active) setError("执行流程暂不可用"); });
     return () => { active = false; };
-  }, [taskId, revision]);
+  }, [api, taskId, revision]);
   const node = flow?.nodes.find((item) => item.id === selected);
   return <details className="run-flow" id="research-flow">
     <summary>执行流程 {flow?.completeness === "legacy_incomplete" ? "· 历史记录不完整" : ""}</summary>

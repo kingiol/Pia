@@ -22,7 +22,6 @@ from .adapters import (
     _safe_fixture_path,
 )
 from .agent_contracts import AgentInputContract, AgentOutputContract
-from .agent_graph import build_research_graph, validate_graph_state
 from .analytics import ANALYTICAL_KEYS, AnalyticsStore
 from .postgres_analytics import PostgresAnalyticsStore
 from .broker import OrderRequest, PaperBrokerAdapter
@@ -2635,6 +2634,8 @@ class PiaRuntime:
             "fundamentals": pack["blocks"]["fundamentals"]["data"],
             **pack["blocks"]["sources"]["data"],
         }
+        from .agent_graph import build_research_graph, validate_graph_state
+
         graph = build_research_graph(
             lambda name, input_data, output_data, ids: self._run_agent(
                 task, name, input_data, output_data, evidence_ids=ids,

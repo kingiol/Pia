@@ -16,24 +16,27 @@ const SESSION_KEY = "pia.desktop.cloud_session.v1";
 
 type LocalHealth = { runtime: string; desktop_runtime?: unknown };
 
-export async function waitForLocalRuntime(readHealth: () => Promise<LocalHealth>, expected?: DesktopEndpoint): Promise<void> {
+export async function waitForLocalRuntime<T extends LocalHealth>(readHealth: () => Promise<T>, expected?: DesktopEndpoint, signal?: AbortSignal): Promise<T> {
   // Packaged sidecars need time to extract their Python runtime on a cold launch.
   const deadline = Date.now() + 60000;
   while (true) {
-    let health: LocalHealth;
+    signal?.throwIfAborted();
+    let health: T;
     try {
       health = await readHealth();
     } catch {
+      signal?.throwIfAborted();
       if (Date.now() >= deadline) throw new Error("无法启动本地运行时，请检查本地服务后重试。");
       await new Promise((resolve) => setTimeout(resolve, 250));
       continue;
     }
+    signal?.throwIfAborted();
     if (health.runtime !== "local") throw new Error("本地 API 返回了云端模式，请检查本地端口配置。");
     const identity = health.desktop_runtime as { channel?: unknown; instance_id?: unknown } | undefined;
     if (expected && (identity?.channel !== expected.channel || identity?.instance_id !== expected.instance_id)) {
       throw new Error("本地运行时与当前窗口不匹配，已停止连接。");
     }
-    return;
+    return health;
   }
 }
 

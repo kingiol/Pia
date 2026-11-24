@@ -179,3 +179,13 @@ test("rejects a Cloud runtime at the Local address without retrying", async () =
     assert.equal(elapsed(), 0);
   });
 });
+
+test("ignores a Local startup result after the user switches away", async () => {
+  const controller = new AbortController();
+  let respond;
+  const waiting = waitForLocalRuntime(() => new Promise((resolve) => { respond = resolve; }),
+    undefined, controller.signal);
+  controller.abort();
+  respond({ runtime: "local" });
+  await assert.rejects(waiting, { name: "AbortError" });
+});

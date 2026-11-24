@@ -27,8 +27,8 @@ import {
   XIcon,
   type Icon,
 } from "@phosphor-icons/react";
-import { api, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
-import type { CandidateListResponse, LocalCredentialStatus, RuleReason } from "./api";
+import { useWorkspaceApi, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
+import type { CandidateListResponse, LocalCredentialStatus, RuleReason, WorkspaceHealth } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
 import { researchAgentLabel } from "./researchLabels";
@@ -47,9 +47,25 @@ const nav = [
   ["通知", "Notifications", "notifications"],
 ] as const;
 
+export type WorkspaceView = (typeof nav)[number][1];
+
+const pageResources = {
+  Overview: ["tasks", "rules", "market", "portfolio", "profile", "watchlists", "notifications"],
+  Market: ["market", "watchlists"],
+  Watchlist: ["watchlists"],
+  Portfolio: ["portfolio"],
+  Research: ["tasks", "market"],
+  Journal: ["journal", "journalSummary", "journalPatterns"],
+  Profile: ["profile"],
+  Rules: ["rules"],
+  "Data Health": ["health"],
+  Audit: ["tasks"],
+  Notifications: ["notifications"],
+} as const satisfies Record<WorkspaceView, readonly string[]>;
+
 const DEFAULT_WATCHLIST = "Research watchlist";
 
-const webRoutes: Record<string, string> = {
+const webRoutes: Record<WorkspaceView, string> = {
   Overview: "/overview",
   Market: "/market",
   Watchlist: "/watchlist",
@@ -67,10 +83,10 @@ function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function viewFromWebPath(pathname: string) {
+function viewFromWebPath(pathname: string): WorkspaceView {
   const normalized = pathname.replace(/\/+$/, "") || "/";
   if (normalized.startsWith("/research/")) return "Research";
-  return Object.entries(webRoutes).find(([, path]) => path === normalized)?.[0] ?? "Overview";
+  return (Object.keys(webRoutes) as WorkspaceView[]).find((view) => webRoutes[view] === normalized) ?? "Overview";
 }
 
 function taskFromWebPath(pathname: string) {
@@ -227,7 +243,7 @@ type SetupState = {
 
 function SetupGuide({ setup, onNavigate, onCreateReview }: {
   setup: SetupState;
-  onNavigate: (view: string) => void;
+  onNavigate: (view: WorkspaceView) => void;
   onCreateReview: () => void;
 }) {
   const steps = [
@@ -280,7 +296,20 @@ function LoginView({ onSubmit, error }: { onSubmit: (token: string) => void; err
   </main>;
 }
 
-export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runtimeControl?: ReactNode; runtimeReady?: boolean; runtimeMode?: "local" | "cloud" } = {}) {
+export function App({
+  runtimeControl, runtimeReady = true, runtimeMode, runtimeHealth, runtimeError, onRuntimeRetry,
+  workspaceView, onWorkspaceViewChange,
+}: {
+  runtimeControl?: ReactNode;
+  runtimeReady?: boolean;
+  runtimeMode?: "local" | "cloud";
+  runtimeHealth?: WorkspaceHealth;
+  runtimeError?: string;
+  onRuntimeRetry?: () => void;
+  workspaceView?: WorkspaceView;
+  onWorkspaceViewChange?: (view: WorkspaceView) => void;
+} = {}) {
+  const api = useWorkspaceApi();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return null;
@@ -293,7 +322,8 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   const detail = taskDetail?.task.id === selectedId ? taskDetail : null;
   const [detailError, setDetailError] = useState("");
   const [mobileDetailOpen, setMobileDetailOpen] = useState(() => Boolean(selectedId));
-  const [health, setHealth] = useState<{ status: string; runtime: string; provider: { status: string; provider_id?: string }; llm: { model: string; credentials_configured: boolean }; scheduler?: { enabled: boolean; timezone: string; close_time: string; last_dispatched_date: string | null } } | null>(null);
+  const [latestHealth, setHealth] = useState<WorkspaceHealth | null>(null);
+  const health = latestHealth ?? runtimeHealth ?? null;
   const [rules, setRules] = useState<Record<string, unknown> | null>(null);
   const [market, setMarket] = useState<Record<string, unknown> | null>(null);
   const [portfolio, setPortfolio] = useState<Record<string, unknown> | null>(null);
@@ -305,10 +335,14 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   const [journalPatterns, setJournalPatterns] = useState<JournalPatterns | null>(null);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [view, setView] = useState(() => {
+  const [internalView, setInternalView] = useState<WorkspaceView>(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return "Overview";
     return viewFromWebPath(window.location.pathname);
   });
+  const view = workspaceView ?? internalView;
+  const setView = onWorkspaceViewChange ?? setInternalView;
+  const page = runtimeControl ? view : undefined;
+  const [pageLoads, setPageLoads] = useState<Partial<Record<WorkspaceView, { error?: string }>>>({});
   const [busy, setBusy] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -321,6 +355,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     return new URLSearchParams(window.location.search).get("q") ?? "";
   });
   const searchRef = useRef<HTMLInputElement>(null);
+  const focusMarketCandidates = useRef(false);
 
   const selectTask = useCallback((taskId: string | null) => {
     if (selectedTaskRef.current === taskId) return;
@@ -332,12 +367,6 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     setDetailError("");
     if (!taskId) setMobileDetailOpen(false);
     setTaskData(null);
-    if (typeof window !== "undefined" && isTauriRuntime()) {
-      const url = new URL(window.location.href);
-      if (taskId) url.searchParams.set("task", taskId);
-      else url.searchParams.delete("task");
-      window.history.replaceState({}, "", url);
-    }
   }, []);
 
   const loadDetail = useCallback(async (taskId: string) => {
@@ -360,7 +389,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         setDetailError(message);
       }
     }
-  }, [selectTask]);
+  }, [api, selectTask]);
 
   const openResearch = (taskId: string) => {
     selectTask(taskId);
@@ -378,57 +407,49 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     });
   };
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (target = page) => {
+    if (!runtimeReady) return;
+    const loaders = {
+      tasks: async () => {
+        const result = await api.tasks();
+        setTasks(result.tasks);
+        if (!selectedTaskRef.current && result.tasks[0]) selectTask(result.tasks[0].id);
+      },
+      health: async () => setHealth(await api.health()),
+      rules: async () => setRules((await api.rules()).rules),
+      market: async () => setMarket(await api.market()),
+      portfolio: async () => setPortfolio(await api.portfolio()),
+      profile: async () => setProfile(await api.profile()),
+      watchlists: async () => setWatchlists((await api.watchlists()).watchlists),
+      notifications: async () => {
+        const { notifications } = await api.notifications();
+        const rows = notifications as NotificationRow[];
+        setNotifications(rows);
+        setUnreadNotifications(rows.filter((item) => !item.read_at).length);
+      },
+      journal: async () => setJournalItems((await api.journal()).items),
+      journalSummary: async () => setJournalSummary(await api.journalSummary()),
+      journalPatterns: async () => setJournalPatterns(await api.journalPatterns()),
+    };
+    const optional = new Set(["watchlists", "notifications", "journal", "journalSummary", "journalPatterns"]);
     try {
-      const [taskResult, healthResult, ruleResult, marketResult, portfolioResult, profileResult, watchlistResult, notificationResult, journalResult, journalSummaryResult, journalPatternsResult] = await Promise.all([
-        api.tasks(),
-        api.health(),
-        api.rules(),
-        api.market(),
-        api.portfolio(),
-        api.profile(),
-        api.watchlists().catch(() => ({ watchlists: [] })),
-        api.notifications().catch(() => ({ notifications: [] })),
-        api.journal().catch(() => ({ items: [], next_cursor: null })),
-        api.journalSummary().catch(() => ({
-          decision_count: 0,
-          retrospective_count: 0,
-          intent_counts: {},
-          action_counts: {},
-          outcome_status_counts: {},
-          comparable_outcome_count: 0,
-          average_return_pct: null,
-          rule_snapshot_counts: {},
-          warnings: [],
-        })),
-        api.journalPatterns().catch(() => ({
-          intent_patterns: [],
-          rule_patterns: [],
-          memory_candidates: [],
-          warnings: [],
-        })),
-      ]);
-      setTasks(taskResult.tasks);
-      setHealth(healthResult);
-      setRules(ruleResult.rules);
-      setMarket(marketResult);
-      setPortfolio(portfolioResult);
-      setProfile(profileResult);
-      setWatchlists(watchlistResult.watchlists);
-      setJournalItems(journalResult.items);
-      setJournalSummary(journalSummaryResult);
-      setJournalPatterns(journalPatternsResult);
-      const nextNotifications = notificationResult.notifications as NotificationRow[];
-      setNotifications(nextNotifications);
-      setUnreadNotifications(nextNotifications.filter((item) => !item.read_at).length);
-      setError(null);
-      if (!selectedTaskRef.current && taskResult.tasks[0]) selectTask(taskResult.tasks[0].id);
+      const resources = target ? pageResources[target] : Object.keys(loaders) as (keyof typeof loaders)[];
+      await Promise.all(resources.map((name) => {
+        const request = loaders[name]();
+        return (!target || target === "Overview") && optional.has(name) ? request.catch(() => undefined) : request;
+      }));
+      if (target) setPageLoads((loads) => ({ ...loads, [target]: {} }));
+      else setError(null);
     } catch (requestError) {
-      const message = friendlyError(requestError, "无法连接运行时");
-      if (/云端工作区需要重新连接|unauthorized|401/i.test(message)) setAuthRequired(true);
-      setError(message);
+      const message = friendlyError(requestError, "无法加载工作区数据");
+      if (target) {
+        setPageLoads((loads) => ({ ...loads, [target]: { error: message } }));
+      } else {
+        if (/云端工作区需要重新连接|unauthorized|401/i.test(message)) setAuthRequired(true);
+        setError(message);
+      }
     }
-  }, [selectTask]);
+  }, [api, page, runtimeReady, selectTask]);
 
   useEffect(() => {
     if (runtimeControl) return;
@@ -436,11 +457,17 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       ? window.sessionStorage.getItem("pia.cloud_token") ?? window.sessionStorage.getItem("pia.server_token")
       : null;
     if (storedToken) api.setToken(storedToken);
-  }, [runtimeControl]);
-  useEffect(() => { if (runtimeReady) void refresh(); }, [refresh, runtimeReady]);
+  }, [api, runtimeControl]);
+  useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
-    if (typeof window === "undefined" || isTauriRuntime()) return;
+    if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
+    if (isTauriRuntime()) {
+      if (selectedId) url.searchParams.set("task", selectedId);
+      else url.searchParams.delete("task");
+      window.history.replaceState({}, "", url);
+      return;
+    }
     const isMobileQueue = (view === "Research" || view === "Overview")
       && !mobileDetailOpen && window.matchMedia("(max-width: 700px)").matches;
     const linkedTask = isMobileQueue ? null : selectedId;
@@ -457,33 +484,37 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     window.history.replaceState({}, "", url);
   }, [searchQuery, selectedId, view, mobileDetailOpen]);
   useEffect(() => {
-    if (!selectedId || !runtimeReady) return;
+    if (!selectedId || !runtimeReady || (page && !["Overview", "Research", "Audit", "Rules"].includes(page))) return;
+    let active = true;
     let loading = false;
     const update = async () => {
-      if (loading) return;
+      if (!active || loading) return;
       loading = true;
       await loadDetail(selectedId);
       loading = false;
     };
     const refreshSelection = () => {
+      if (!active) return;
       void update();
-      void api.tasks().then((result) => setTasks(result.tasks)).catch(() => undefined);
+      if (!page || page === "Overview" || page === "Research") {
+        void api.tasks().then((result) => { if (active) setTasks(result.tasks); }).catch(() => undefined);
+      }
     };
     void update();
     const unsubscribe = api.subscribeTask(selectedId, refreshSelection);
     const handle = window.setInterval(refreshSelection, 1200);
-    return () => { unsubscribe(); window.clearInterval(handle); };
-  }, [selectedId, runtimeReady, loadDetail]);
+    return () => { active = false; unsubscribe(); window.clearInterval(handle); };
+  }, [api, page, selectedId, runtimeReady, loadDetail]);
 
   const createTask = async () => {
     if (!runtimeReady) return;
     setBusy(true);
     try {
       const date = health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : shanghaiDate();
-      const result = await api.createTask(taskInput(health, market, date));
+      const result = await api.createTask(taskInput(health, market ?? await api.market(), date));
       openResearch(result.task.id);
       setView("Overview");
-      await refresh();
+      if (!page || page === "Overview") await refresh();
     } catch (requestError) {
       setError(friendlyError(requestError, "创建任务失败"));
     } finally {
@@ -501,14 +532,15 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
         if (cancelled) return;
         if (event.payload === "status") {
           setView("Data Health");
-          await refresh();
+          if (!page || page === "Data Health") await refresh();
           return;
         }
+        if (!runtimeReady) return;
         if (event.payload === "pause-scheduler") {
           try {
             await api.stopScheduler();
             setView("Data Health");
-            await refresh();
+            if (!page || page === "Data Health") await refresh();
             setError(null);
           } catch (requestError) {
             setError(friendlyError(requestError, "暂停调度器失败"));
@@ -519,7 +551,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
           try {
             await api.startScheduler();
             setView("Data Health");
-            await refresh();
+            if (!page || page === "Data Health") await refresh();
             setError(null);
           } catch (requestError) {
             setError(friendlyError(requestError, "恢复调度器失败"));
@@ -535,7 +567,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       cancelled = true;
       unlisten?.();
     };
-  }, [refresh]);
+  }, [api, page, refresh, runtimeReady, setView]);
 
   useEffect(() => {
     const onShortcut = (event: globalThis.KeyboardEvent) => {
@@ -559,15 +591,15 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     };
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, []);
+  }, [setView]);
 
   const createResearch = async (symbol: string) => {
     setBusy(true);
     try {
-      const result = await api.createResearchTask(symbol, taskInput(health, market));
+      const result = await api.createResearchTask(symbol, taskInput(health, market ?? await api.market()));
       openResearch(result.task.id);
       setView("Research");
-      await refresh();
+      if (!page || page === "Research") await refresh();
     } catch (requestError) {
       setError(friendlyError(requestError, "创建个股研究失败"));
     } finally {
@@ -861,6 +893,19 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
     ].join(" ").toLowerCase().includes(query));
   }, [searchQuery, tasks]);
 
+  const pageTitle = view === "Overview" ? "研究总览" : nav.find(([, key]) => key === view)?.[0] ?? view;
+  const pageLoad = page ? pageLoads[page] : undefined;
+  const loadError = runtimeError ?? pageLoad?.error;
+  const contentReady = runtimeReady && (!page || Boolean(pageLoad && !loadError));
+
+  useEffect(() => {
+    if (!focusMarketCandidates.current) return;
+    if (view !== "Market" || contentReady) {
+      focusMarketCandidates.current = false;
+      if (view === "Market") document.getElementById("market-candidates")?.focus();
+    }
+  }, [contentReady, view]);
+
   if (authRequired && !runtimeControl) {
     return <LoginView
       error={error}
@@ -875,12 +920,13 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
   }
 
   const isResearchWorkspace = view === "Overview" || view === "Research";
+  const showMarketContext = !page || isResearchWorkspace || view === "Market";
   const showMobileDetail = Boolean(selectedId && mobileDetailOpen && isResearchWorkspace);
   const showWindowTitlebar = isTauriRuntime() && navigator.userAgent.includes("Macintosh");
   const scanKey = JSON.stringify([health?.provider?.provider_id, market?.snapshot_id, market?.quality, profile?.id, rules?.version]);
   const openMarketCandidates = () => {
+    focusMarketCandidates.current = true;
     setView("Market");
-    window.requestAnimationFrame(() => document.getElementById("market-candidates")?.focus());
   };
   return (
     <div className={`shell${showWindowTitlebar ? " shell--macos" : ""}`}>
@@ -918,12 +964,12 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
       <main className={`main${isResearchWorkspace ? " main--research" : ""}${showMobileDetail ? " research-detail-open" : ""}`}>
         <header className="topbar">
           <div className="page-heading">
-            <h1 tabIndex={-1}>{view === "Overview" ? "研究总览" : nav.find(([, key]) => key === view)?.[0] ?? view}</h1>
-            <div className="page-context">
+            <h1 tabIndex={-1}>{pageTitle}</h1>
+            {showMarketContext && contentReady && <div className="page-context">
               <span className="date-chip">{String(market?.as_of ?? taskInput(health, market).asOf)} · 收盘</span>
               <span className={`provenance-chip ${dataState.tone}`}><i />{dataState.label}</span>
               <span className={`health-chip ${dataState.tone}`}><i />{dataState.healthLabel}</span>
-            </div>
+            </div>}
           </div>
           <div className="topbar-actions">
             <div className="search-field">
@@ -938,13 +984,19 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
               />
             </div>
             <button className="icon-button notification-button" title={`通知 · ${unreadNotifications} 条未读`} aria-label={`通知，${unreadNotifications} 条未读`} onClick={() => setView("Notifications")}><BellIcon size={16} aria-hidden="true" />{unreadNotifications > 0 ? <span className="notification-count">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span> : null}</button>
-            <button className="icon-button" title="刷新" aria-label="刷新" onClick={() => void refresh()}><ArrowClockwiseIcon size={16} aria-hidden="true" /></button>
-            <button className={`primary-button${isResearchWorkspace ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !runtimeReady}><PlusIcon size={16} aria-hidden="true" />{health?.provider?.provider_id === "fixture" ? "开始演示复盘" : "开始今日复盘"}</button>
+            <button className="icon-button" title="刷新" aria-label="刷新" disabled={!runtimeReady} onClick={() => void refresh()}><ArrowClockwiseIcon size={16} aria-hidden="true" /></button>
+            <button className={`primary-button${isResearchWorkspace ? "" : " shortcut-only"}`} data-shortcut="new-review" onClick={() => void createTask()} disabled={busy || !contentReady}><PlusIcon size={16} aria-hidden="true" />{health?.provider?.provider_id === "fixture" ? "开始演示复盘" : "开始今日复盘"}</button>
           </div>
         </header>
 
         {error && <div className="error-banner" role="alert"><WarningCircleIcon size={16} aria-hidden="true" /><strong>需要处理</strong><span>{error}</span><button onClick={() => void refresh()}>重试</button><button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => setError(null)}><XIcon size={16} aria-hidden="true" /></button></div>}
 
+        {!contentReady ? <section className="single-panel panel workspace-status">
+          {loadError ? <>
+            <p role="alert">{loadError}</p>
+            <button className="quiet-button" onClick={runtimeError ? onRuntimeRetry : () => void refresh()}>重试</button>
+          </> : <p role="status">正在加载{runtimeMode === "cloud" ? "云端" : "本地"}{pageTitle}…</p>}
+        </section> : <>
         {view === "Overview" && !Object.values(setup).every(Boolean) && <SetupGuide setup={setup} onNavigate={setView} onCreateReview={() => void createTask()} />}
         {view === "Overview" && <AttentionFeed notifications={notifications} onOpenTask={(taskId) => {
           openResearch(taskId);
@@ -1015,6 +1067,7 @@ export function App({ runtimeControl, runtimeReady = true, runtimeMode }: { runt
           dataTone={dataState.tone}
           onNavigate={setView}
         />}
+        </>}
       </main>
     </div>
   );
@@ -1090,7 +1143,7 @@ function StrategyAgentPanel({
   watchlists: Watchlist[];
   tasks: Task[];
   dataTone: string;
-  onNavigate: (view: string) => void;
+  onNavigate: (view: WorkspaceView) => void;
 }) {
   const profilePayload = (profile?.payload ?? {}) as Record<string, unknown>;
   const objective = String(profilePayload.investment_objective ?? "");
@@ -1690,6 +1743,7 @@ type MarketCandidatesProps = {
 };
 
 function MarketCandidates({ asOf, source, fixture, pending, savedScan, watchlists, onScanned, onWatch, onResearch, onOpenData }: MarketCandidatesProps) {
+  const api = useWorkspaceApi();
   const [strategies, setStrategies] = useState([DEFAULT_SCAN_STRATEGY]);
   const [strategy, setStrategy] = useState(() => {
     const id = savedScan?.strategy_id ?? DEFAULT_SCAN_STRATEGY.strategy_id;
@@ -1911,6 +1965,7 @@ function PortfolioPositionDialog({ draft, onClose, onChanged }: {
   onClose: () => void;
   onChanged: (snapshot?: Record<string, unknown>) => void;
 }) {
+  const api = useWorkspaceApi();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { position, snapshotId, asOf, mode, positionIndex } = draft;
@@ -1982,6 +2037,7 @@ function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
   onClose: () => void;
   onImported: (snapshot: Record<string, unknown>, asOf: string) => void;
 }) {
+  const api = useWorkspaceApi();
   const [source, setSource] = useState<"file" | "paste">("file");
   const [pasteFormat, setPasteFormat] = useState<"csv" | "manual">("csv");
   const [importing, setImporting] = useState(false);
@@ -2143,6 +2199,7 @@ function PortfolioView({ portfolio, demoDate, onChanged }: {
 }
 
 function ProfileView({ profile, onSaved, localCredentials = false }: { profile: Record<string, unknown> | null; onSaved: () => void; localCredentials?: boolean }) {
+  const api = useWorkspaceApi();
   const savedObjective = String((profile?.payload as Record<string, unknown> | undefined)?.investment_objective ?? DEFAULT_INVESTMENT_OBJECTIVE);
   const displayedObjective = displayInvestmentObjective(savedObjective);
   const [objective, setObjective] = useState(displayedObjective);
@@ -2207,17 +2264,18 @@ function ProfileView({ profile, onSaved, localCredentials = false }: { profile: 
 const localCredentialSettings = {
   deepseek: {
     title: "DeepSeek", subtitle: "本地模型凭据", id: "deepseek-api-key", label: "API 密钥", secretName: "API 密钥",
-    environment: "DEEPSEEK_API_KEY", placeholder: "sk-...", read: api.deepseekCredential,
-    save: api.saveDeepseekCredential, clear: api.clearDeepseekCredential,
+    environment: "DEEPSEEK_API_KEY", placeholder: "sk-...", read: "deepseekCredential",
+    save: "saveDeepseekCredential", clear: "clearDeepseekCredential",
   },
   tushare: {
     title: "Tushare", subtitle: "本地行情数据", id: "tushare-token", label: "访问令牌", secretName: "访问令牌",
-    environment: "TUSHARE_TOKEN", placeholder: "输入 Tushare Token", read: api.tushareCredential,
-    save: api.saveTushareCredential, clear: api.clearTushareCredential,
+    environment: "TUSHARE_TOKEN", placeholder: "输入 Tushare Token", read: "tushareCredential",
+    save: "saveTushareCredential", clear: "clearTushareCredential",
   },
-};
+} as const;
 
 function CredentialSettings({ kind, onSaved }: { kind: keyof typeof localCredentialSettings; onSaved: () => void }) {
+  const api = useWorkspaceApi();
   const settings = localCredentialSettings[kind];
   const [credential, setCredential] = useState<LocalCredentialStatus | null>(null);
   const [draft, setDraft] = useState("");
@@ -2230,7 +2288,7 @@ function CredentialSettings({ kind, onSaved }: { kind: keyof typeof localCredent
     let cancelled = false;
     setPending(true);
     setError("");
-    settings.read().then((value) => {
+    api[settings.read]().then((value) => {
       if (!cancelled) setCredential(value);
     }).catch(() => {
       if (!cancelled) setError("无法读取凭据状态，请重试。");
@@ -2238,14 +2296,14 @@ function CredentialSettings({ kind, onSaved }: { kind: keyof typeof localCredent
       if (!cancelled) setPending(false);
     });
     return () => { cancelled = true; };
-  }, [reload, settings]);
+  }, [api, reload, settings]);
 
   const update = async (clear: boolean) => {
     setPending(true);
     setError("");
     setMessage("");
     try {
-      const next = await (clear ? settings.clear() : settings.save(draft.trim()));
+      const next = await (clear ? api[settings.clear]() : api[settings.save](draft.trim()));
       setCredential(next);
       setDraft("");
       setMessage(clear ? `已清除保存的 ${settings.secretName}。` : `${settings.secretName} 已保存，后续请求立即生效。`);
@@ -2283,6 +2341,7 @@ function CredentialSettings({ kind, onSaved }: { kind: keyof typeof localCredent
 }
 
 function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unknown> | null; evaluation?: RuleResult | null; onSaved: () => void }) {
+  const api = useWorkspaceApi();
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState("");
   const [positionLimit, setPositionLimit] = useState("");
@@ -2356,6 +2415,7 @@ function DataHealthView({ health, syncResult, onSyncResult }: {
   syncResult: Record<string, unknown> | null;
   onSyncResult: (result: Record<string, unknown>) => void;
 }) {
+  const api = useWorkspaceApi();
   const [status, setStatus] = useState("");
   const sync = async () => {
     try {

@@ -475,8 +475,9 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .portfolio-import-sources button { flex: 1; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--secondary); font-size: 13px; }
 .portfolio-import-sources button[aria-pressed="true"] { border-color: var(--line); background: var(--surface); color: var(--accent); }
 .portfolio-import-content { min-height: 120px; resize: vertical; font: 12px/20px var(--mono); }
-.runtime-starting, .runtime-error { margin: 8px 8px 0; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
-.runtime-error { color: var(--danger); }
+.workspace-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 24px; }
+.workspace-status p { margin: 0; color: var(--secondary); }
+.workspace-status p[role="alert"] { color: var(--danger); }
 
 /* Research workspace: make decisions and evidence easier to scan. */
 :root {
