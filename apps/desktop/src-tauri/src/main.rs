@@ -123,7 +123,7 @@ fn spawn_runtime(app: &tauri::AppHandle, channel: &str) -> Result<RuntimeChild, 
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        command.process_group(0).stdin(Stdio::piped());
     }
     #[cfg(windows)]
     let job = windows_job::create().map_err(|error| error.to_string())?;
@@ -139,6 +139,8 @@ fn spawn_runtime(app: &tauri::AppHandle, channel: &str) -> Result<RuntimeChild, 
         .arg(data_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+    #[cfg(unix)]
+    command.arg("--exit-on-stdin-close");
     let mut process = command.spawn().map_err(|error| error.to_string())?;
     #[cfg(windows)]
     {

@@ -24,7 +24,7 @@ def desktop(*, channel, provider, directory):
 
 @contextmanager
 def running_desktop(command, env):
-    with subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    with subprocess.Popen(command, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           encoding="utf-8", errors="replace") as process:
         lines = queue.Queue()
 
@@ -40,7 +40,7 @@ def running_desktop(command, env):
                 if line is None or line.startswith("PIA_DESKTOP_ERROR "):
                     raise AssertionError(f"Desktop runtime did not start: {line}")
                 if line.startswith("PIA_DESKTOP_READY "):
-                    yield json.loads(line.removeprefix("PIA_DESKTOP_READY "))
+                    yield process, json.loads(line.removeprefix("PIA_DESKTOP_READY "))
                     return
         finally:
             process.terminate()
@@ -58,6 +58,17 @@ def request(url, payload=None):
 
 
 class DesktopRuntimeTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Windows uses a job object to tie the runtime to the desktop")
+    def test_debug_runtime_releases_data_when_desktop_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command = desktop(channel="debug", provider="fixture", directory=Path(directory))
+            env = dict(os.environ, PIA_SCHEDULER_ENABLED="0", PIA_AUTOSTART_TASKS="0")
+            with running_desktop([*command, "--exit-on-stdin-close"], env) as (process, first):
+                process.stdin.close()
+                self.assertEqual(process.wait(timeout=10), 0)
+            with running_desktop(command, env) as (_, reopened):
+                self.assertNotEqual(reopened["instance_id"], first["instance_id"])
+
     def test_desktop_instances_isolate_data_and_release_reopens_it(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -66,7 +77,7 @@ class DesktopRuntimeTest(unittest.TestCase):
             release_command = desktop(channel="release", provider="akshare", directory=release_dir)
             env = dict(os.environ, PIA_SCHEDULER_ENABLED="0", PIA_AUTOSTART_TASKS="0", PIA_PORT="1",
                        PIA_DB_PATH=str(root / "legacy.sqlite3"), PIA_DUCKDB_PATH=str(root / "legacy.duckdb"))
-            with running_desktop(debug_command, env) as debug, running_desktop(release_command, env) as release:
+            with running_desktop(release_command, env) as (_, release), running_desktop(debug_command, env) as (_, debug):
                 debug_base, release_base = debug["base_url"], release["base_url"]
                 self.assertNotEqual(debug_base.split("/")[2], release_base.split("/")[2])
                 self.assertEqual(request(release_base + "/health")["desktop_runtime"]["channel"], "release")
@@ -102,7 +113,7 @@ class DesktopRuntimeTest(unittest.TestCase):
             rejected = subprocess.run(wrong_profile, env=env, capture_output=True, timeout=15)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("当前应用与数据目录的环境不一致", json.loads(rejected.stdout.removeprefix(b"PIA_DESKTOP_ERROR ")))
-            with running_desktop(release_command, env) as reopened:
+            with running_desktop(release_command, env) as (_, reopened):
                 self.assertNotEqual(reopened["instance_id"], release["instance_id"])
                 rows = request(reopened["base_url"] + "/watchlists")["watchlists"]
                 self.assertEqual(rows[0]["symbols"], ["600000.SH"])

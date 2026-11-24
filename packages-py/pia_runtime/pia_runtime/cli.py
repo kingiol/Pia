@@ -5,8 +5,10 @@ import getpass
 import json
 import os
 import signal
+import sys
 from contextlib import nullcontext
 from pathlib import Path
+from threading import Thread
 from uuid import uuid4
 
 from .api import serve
@@ -30,6 +32,7 @@ def main() -> None:
     desktop_parser.add_argument("--channel", choices=("debug", "release"), required=True)
     desktop_parser.add_argument("--data-dir", type=Path, required=True)
     desktop_parser.add_argument("--provider", required=True)
+    desktop_parser.add_argument("--exit-on-stdin-close", action="store_true")
     cloud_parser = subparsers.add_parser("cloud", aliases=["server"])
     cloud_parser.add_argument("--host", default=None)
     cloud_parser.add_argument("--port", type=int, default=None)
@@ -119,6 +122,13 @@ def _serve_desktop(args: argparse.Namespace) -> None:
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, terminate)
+    if args.exit_on_stdin_close:
+        def watch_desktop():
+            # The desktop owns the write end, including when Tauri dev kills it on reload.
+            if not os.read(sys.stdin.fileno(), 1):
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        Thread(target=watch_desktop, daemon=True).start()
     with lock_desktop_data(directory):
         claim_desktop_profile(directory, f"{channel}:{profile}")
         runtime = PiaRuntime(settings)
