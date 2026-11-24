@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .runtime import PiaRuntime
+from .market_sync import MARKET_SYNC_STAGES
 from .schema import SchemaValidationError, validate_named, validate_schema
 from .security import redact_secrets
 
@@ -375,6 +376,37 @@ def serve(
                 idle_ticks += 1
                 time.sleep(0.25)
 
+        def _stream_data_sync(self, run_sync) -> None:
+            self.send_response(202)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            connected = True
+
+            def send_frame(frame: dict[str, Any]) -> None:
+                nonlocal connected
+                if connected:
+                    try:
+                        self.wfile.write((json.dumps(frame, ensure_ascii=False) + "\n").encode())
+                        self.wfile.flush()
+                    except OSError:
+                        connected = False
+
+            try:
+                result = run_sync(on_progress=lambda progress: send_frame({"progress": progress}))
+                send_frame({"result": result})
+            except Exception as error:
+                send_frame({"error": type(error).__name__, "detail": redact_secrets(str(error))})
+            finally:
+                runtime.observability.record_request(
+                    self.command, self._route(), 202,
+                    (time.perf_counter() - (self._request_started_at or time.perf_counter())) * 1000,
+                )
+
         def do_POST(self) -> None:
             self._request_started_at = time.perf_counter()
             path = self._route()
@@ -455,13 +487,22 @@ def serve(
                         "properties": {
                             "as_of": {"type": "string"},
                             "symbols": {"type": "array", "items": {"type": "string"}},
+                            "include_default_symbols": {"type": "boolean"},
+                            "refresh_stage": {"type": "string", "enum": list(MARKET_SYNC_STAGES)},
                         },
                     })
-                    return self._send(202, runtime.sync_market_data(
-                        body["as_of"],
-                        body.get("symbols", []),
-                        user_id=self._user_id() or "default",
-                    ))
+                    def run_sync(**kwargs):
+                        return runtime.sync_market_data(
+                            body["as_of"], body.get("symbols", []),
+                            user_id=self._user_id() or "default",
+                            include_default_symbols=body.get("include_default_symbols", True),
+                            refresh_stage=body.get("refresh_stage"),
+                            **kwargs,
+                        )
+
+                    if self.headers.get("Accept") == "application/x-ndjson":
+                        return self._stream_data_sync(run_sync)
+                    return self._send(202, run_sync())
                 if path == "/api/orders/preview":
                     validate_schema(body, {
                         "type": "object",

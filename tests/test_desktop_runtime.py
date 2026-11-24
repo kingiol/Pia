@@ -58,6 +58,29 @@ def request(url, payload=None):
 
 
 class DesktopRuntimeTest(unittest.TestCase):
+    def test_market_sync_streams_progress_and_preserves_json_response(self):
+        with tempfile.TemporaryDirectory() as directory:
+            command = desktop(channel="debug", provider="fixture", directory=Path(directory))
+            env = dict(os.environ, PIA_SCHEDULER_ENABLED="0", PIA_AUTOSTART_TASKS="0")
+            with running_desktop(command, env) as (_, runtime):
+                url = runtime["base_url"] + "/data/sync"
+                payload = {"as_of": "2026-11-05", "include_default_symbols": False}
+                with urlopen(Request(url, data=json.dumps(payload).encode(), headers={
+                    "Content-Type": "application/json", "Accept": "application/x-ndjson",
+                }), timeout=10) as response:
+                    self.assertEqual(response.status, 202)
+                    self.assertEqual(response.headers.get_content_type(), "application/x-ndjson")
+                    frames = [json.loads(line) for line in response]
+                self.assertEqual(frames[0]["progress"]["stage"], "market_snapshot")
+                self.assertEqual(frames[0]["progress"]["status"], "running")
+                self.assertEqual(frames[-2], {"progress": {"stage": "finalizing", "status": "running"}})
+                self.assertEqual(frames[-1]["result"]["counts"]["market_snapshot"], 1)
+                self.assertEqual(frames[-1]["result"]["requested_symbols"], [])
+                repeated = request(url, payload)
+                self.assertEqual(repeated["counts"]["trading_calendar"], 0)
+                self.assertEqual(repeated["stages"][1]["status"], "reused")
+                self.assertNotEqual(repeated["stages"][0]["status"], "reused")
+
     @unittest.skipIf(os.name == "nt", "Windows uses a job object to tie the runtime to the desktop")
     def test_debug_runtime_releases_data_when_desktop_exits(self):
         with tempfile.TemporaryDirectory() as directory:

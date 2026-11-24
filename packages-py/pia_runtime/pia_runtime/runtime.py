@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .adapters import (
@@ -28,6 +28,7 @@ from .broker import OrderRequest, PaperBrokerAdapter
 from .config import ROOT, Settings
 from .credentials import CredentialStore
 from .data_worker import DataWorker
+from .market_sync import MarketSyncRuns
 from .db import Database
 from .data_quality import validate_snapshot
 from .decision_context import (
@@ -222,6 +223,7 @@ class PiaRuntime:
         self.portfolio_provider = self.fixture_provider
         self._research_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
         self._provider_context = threading.local()
+        self._market_sync_runs = MarketSyncRuns()
         self.strategies = load_strategies(ROOT / "config/strategies")
         for (strategy_id, version), manifest in self.strategies.items():
             row = self.db.fetchone("SELECT content_hash FROM screening_strategy_versions WHERE strategy_id=? AND version=?",
@@ -1556,6 +1558,24 @@ class PiaRuntime:
         as_of: str,
         symbols: list[str],
         user_id: str = "default",
+        *,
+        include_default_symbols: bool = True,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+        refresh_stage: str | None = None,
+    ) -> dict[str, Any]:
+        symbols = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
+        request = (tuple(sorted(symbols)), include_default_symbols, refresh_stage)
+        return self._market_sync_runs.run(
+            (user_id, as_of), request,
+            lambda report: self._sync_market_data(
+                as_of, symbols, user_id, include_default_symbols, refresh_stage, report,
+            ),
+            on_progress,
+        )
+
+    def _sync_market_data(
+        self, as_of: str, symbols: list[str], user_id: str, include_default_symbols: bool,
+        refresh_stage: str | None, on_progress: Callable[[dict[str, Any]], None],
     ) -> dict[str, Any]:
         if self.settings.data_provider == "fixture":
             providers = [self.fixture_provider]
@@ -1566,6 +1586,12 @@ class PiaRuntime:
         previous_scope = getattr(self._provider_context, "user_id", "default")
         self._provider_context.user_id = user_id
         attempts: list[dict[str, Any]] = []
+
+        def load_market(day: str):
+            sources = [source.provider_id for source in providers]
+            if self.settings.mode == "local" and sources:
+                return self.db.get_market_snapshot_for_as_of(day, sources=sources, reusable_qualities=("verified",))
+            return None
 
         def call(capability, method_name, *args, **kwargs):
             selected, payload = self._provider_call(capability, method_name, *args, **kwargs)
@@ -1581,9 +1607,14 @@ class PiaRuntime:
             worker = DataWorker(
                 provider, self.analytics, self.observability, call_provider=call,
             )
-            result = worker.sync_market_data(as_of, symbols)
-            if result.get("market_snapshot"):
-                self.db.save_market_snapshot(result["market_snapshot"])
+            result = worker.sync_market_data(
+                as_of, symbols, include_default_symbols=include_default_symbols, on_progress=on_progress,
+                scope=f"{self.settings.mode}\0{user_id}\0{self.settings.data_provider}",
+                refresh_stage=refresh_stage, save_market=self.db.save_market_snapshot, load_market=load_market,
+                reuse_local_daily_bars=self.settings.mode == "local",
+            )
+            if on_progress:
+                on_progress({"stage": "finalizing", "status": "running"})
             result["provider_attempts"] = attempts
             result["derived_events"] = self.events.derive_market_events(result, user_id=user_id)
             self.db.audit(None, "DATA_SYNC_COMPLETED", {

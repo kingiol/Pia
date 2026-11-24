@@ -13,6 +13,12 @@ _children: set[Any] = set()
 _lock = threading.Lock()
 
 
+class ProviderChildError(RuntimeError):
+    def __init__(self, error_type: str):
+        self.code = error_type
+        super().__init__(f"PROVIDER_CHILD_ERROR:{error_type}")
+
+
 def _leaf(connection, function, args, kwargs):
     try:
         connection.send(("ok", function(*args, **kwargs)))
@@ -63,7 +69,7 @@ def isolated_call(function: Callable, args=(), kwargs=None, *, timeout=45.0, che
                 if status == "error":
                     if payload in {"TimeoutError", "ConnectionError", "OSError"}:
                         raise ConnectionError(f"PROVIDER_CHILD_ERROR:{payload}")
-                    raise RuntimeError(f"PROVIDER_CHILD_ERROR:{payload}")
+                    raise ProviderChildError(payload)
                 return payload
             if not process.is_alive():
                 raise RuntimeError("PROVIDER_CHILD_EXITED")

@@ -16,6 +16,48 @@ from pia_runtime.normalization import normalize_daily_bar
 
 
 class AdapterContractTest(unittest.TestCase):
+    def test_akshare_uses_sina_when_eastmoney_rate_limits(self):
+        class Push2RateLimitError(RuntimeError):
+            pass
+
+        def rate_limited(**kwargs):
+            raise Push2RateLimitError()
+
+        class FakeSdk:
+            stock_zh_a_spot_em = stock_zh_a_hist = staticmethod(rate_limited)
+            fund_etf_spot_em = stock_board_industry_name_em = staticmethod(rate_limited)
+            stock_zh_a_spot = staticmethod(lambda: [
+                {"代码": "bj920000", "名称": "Test stock", "最新价": 10, "涨跌幅": 2},
+            ])
+            fund_etf_category_sina = staticmethod(lambda: [
+                {"代码": "510300", "名称": "Test ETF", "最新价": 4, "涨跌幅": -1},
+            ])
+            stock_sector_spot = staticmethod(lambda indicator: [{"板块": "Banks", "涨跌幅": 0.5}])
+            stock_zh_index_spot_em = staticmethod(rate_limited)
+            stock_zh_index_spot_sina = staticmethod(lambda: [
+                {"代码": "sh000001", "名称": "SSE Composite", "最新价": 3500, "涨跌幅": 1.2},
+                {"代码": "sh000002", "名称": "Other index", "最新价": 10, "涨跌幅": 0.2},
+            ])
+
+            @staticmethod
+            def stock_zh_a_daily(*, symbol, start_date, end_date, adjust):
+                assert symbol == "bj920000"
+                assert start_date == end_date == "20261124"
+                return [{"date": "2026-11-24", "open": 9, "high": 10, "low": 9, "close": 10,
+                         "volume": 1000, "amount": 10000}]
+
+        provider = AkshareMarketProvider()
+        provider.sdk = FakeSdk()
+        with patch.object(provider, "_is_latest_open_date", return_value=True):
+            snapshot = provider.get_market_snapshot("2026-11-24")
+        self.assertEqual(snapshot["source_method"], "sina_spot")
+        self.assertEqual([row["symbol"] for row in snapshot["instruments"]], ["920000.BJ", "510300.SH"])
+        self.assertEqual(snapshot["breadth"], 1.0)
+        self.assertEqual(snapshot["sectors"][0]["name"], "Banks")
+        self.assertEqual([row["symbol"] for row in snapshot["indices"]], ["000001.SH"])
+        bars = provider.get_daily_bars("920000.BJ", "2026-11-24", "2026-11-24")
+        self.assertEqual([(bar["trade_date"], bar["close"]) for bar in bars], [("2026-11-24", 10)])
+
     def test_calendar_dates_are_iso_and_weekday_estimates_are_partial(self):
         class Client:
             def trade_cal(self, **kwargs):

@@ -591,6 +591,14 @@ paths:
                 symbols:
                   type: array
                   items: {type: string}
+                include_default_symbols:
+                  type: boolean
+                  default: true
+                  description: Use the first 200 universe symbols when no symbols are supplied.
+                refresh_stage:
+                  type: string
+                  enum: [market_snapshot, trading_calendar, universe, daily_bars, fundamentals, news, filing]
+                  description: Refresh only this stage, filling missing calendar or universe data if required to validate a market snapshot.
       responses:
         "202":
           description: Market data synchronization accepted
@@ -598,6 +606,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DataSyncResponse"
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON objects containing progress updates followed by a result or error.
   /api/orders/preview:
     post:
       requestBody:
@@ -1628,6 +1640,9 @@ components:
         counts:
           type: object
           additionalProperties: {type: integer}
+        stages:
+          type: array
+          items: {type: object, additionalProperties: true}
         market_quality:
           type: object
           required: [field_completeness, field_completeness_target, field_completeness_pass, missing]

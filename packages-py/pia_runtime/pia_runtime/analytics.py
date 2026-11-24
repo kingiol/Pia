@@ -278,6 +278,34 @@ class AnalyticsStore:
             ]],
         )
 
+    def market_sync_receipts(self, as_of: str, scope: str) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT payload_json FROM analytical_snapshots
+                   WHERE kind='market_sync_receipt' AND as_of=CAST(? AS DATE) AND source=?""",
+                [as_of, scope],
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def market_sync_artifact(self, reference: str, *, snapshot: bool = False) -> dict[str, Any] | None:
+        query = (
+            "SELECT payload_json FROM analytical_snapshots WHERE snapshot_id=? AND kind='market'"
+            if snapshot else "SELECT payload_json FROM raw_provider_payloads WHERE id=?"
+        )
+        with self._connection() as connection:
+            row = connection.execute(query, [reference]).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def verified_daily_symbols(self, as_of: str, provider_id: str) -> set[str]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT symbol FROM normalized_daily_bars
+                   WHERE as_of=CAST(? AS DATE) AND trade_date=as_of
+                     AND quality='verified' AND provider_id=?""",
+                [as_of, provider_id],
+            ).fetchall()
+        return {row[0] for row in rows}
+
     def save_universe(self, rows: Iterable[dict[str, Any]]) -> int:
         values = [
             [
@@ -397,7 +425,7 @@ class AnalyticsStore:
                 SELECT snapshot_id, kind, CAST(as_of AS VARCHAR), CAST(observed_at AS VARCHAR),
                        source, quality, payload_json
                 FROM analytical_snapshots
-                WHERE snapshot_id=?
+                WHERE snapshot_id=? AND kind<>'market_sync_receipt'
                 """,
                 [snapshot_id],
             ).fetchone()

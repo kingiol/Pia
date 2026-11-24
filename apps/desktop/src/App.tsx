@@ -27,8 +27,8 @@ import {
   XIcon,
   type Icon,
 } from "@phosphor-icons/react";
-import { useWorkspaceApi, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
-import type { CandidateListResponse, LocalCredentialStatus, MarketWorkspace, Retrospective, RuleReason, SchedulerResponse, WorkspaceHealth } from "./api";
+import { useWorkspaceApi, marketSyncStages, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
+import type { CandidateListResponse, LocalCredentialStatus, MarketSyncProgress, MarketSyncStage, MarketWorkspace, Retrospective, RuleReason, SchedulerResponse, WorkspaceHealth } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
 import { WorkspaceSearch } from "./components/WorkspaceSearch";
@@ -69,6 +69,7 @@ const pageResources = {
 
 type Resource = (typeof pageResources)[WorkspaceView][number];
 type ResourceStatus = { error?: string };
+type ActiveMarketSync = { asOf: string; startedAt: number };
 type CommitResource = <T>(value: T, apply: (value: T) => void) => void;
 type RetrospectiveInput = Pick<Retrospective, "action_taken" | "outcome"> & {
   notes?: string;
@@ -386,6 +387,9 @@ export function App({
   const [authRequired, setAuthRequired] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
   const [dataQuality, setDataQuality] = useState<Awaited<ReturnType<typeof api.syncData>> | null>(null);
+  const [marketSync, setMarketSync] = useState<ActiveMarketSync | null>(null);
+  const [marketSyncError, setMarketSyncError] = useState("");
+  const [marketSyncSteps, setMarketSyncSteps] = useState<Record<string, MarketSyncProgress>>({});
   const [taskData, setTaskData] = useState<TaskDataResponse | null>(null);
   const [searchQuery, setSearchQuery] = useState(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return "";
@@ -919,6 +923,33 @@ export function App({
     approval: tasks.filter((task) => task.status === "WAITING_APPROVAL").length,
   }), [tasks]);
   const session = reviewSession(health, market);
+  const syncMarketData = async (refreshStage?: MarketSyncStage) => {
+    if (marketSync) return;
+    const symbols = [
+      ...(Array.isArray(portfolio?.positions) && portfolio.source !== "fixture"
+        ? portfolio.positions.map((position) => String(position.symbol)) : []),
+      ...watchlists.flatMap((list) => list.symbols),
+    ];
+    const codes = [...new Set(symbols.flatMap((symbol) => stockCode(symbol) ?? []))];
+    setMarketSync({ asOf: session.as_of, startedAt: Date.now() });
+    setMarketSyncError("");
+    setMarketSyncSteps({});
+    setDataQuality(null);
+    try {
+      const result = await api.syncData(session.as_of, codes, (progress) => {
+        setMarketSyncSteps((steps) => ({ ...steps, [progress.stage]: progress }));
+        if (progress.stage === "market_snapshot" && progress.status === "done") {
+          void refreshResources(["market"]);
+        }
+      }, refreshStage);
+      setDataQuality(result);
+    } catch (error) {
+      setMarketSyncError(friendlyError(error, "市场数据同步失败，请稍后重试。"));
+    } finally {
+      setMarketSync(null);
+      void refreshResources(["market", "health"]);
+    }
+  };
   const isDemo = health?.provider.provider_id === "fixture";
   const sessionReady = market?.quality === "verified" && market.as_of === session.as_of
     && isDemo === isDemoMarket(market);
@@ -1106,10 +1137,8 @@ export function App({
             localCredentials={runtimeMode === "local" && runtimeReady} /> :
           view === "Rules" ? <RulesView rules={rules} evaluation={detail?.decision?.rationale.rules} onSaved={() => void refresh()} /> :
           view === "Data Health" ? <DataHealthView health={health} market={market} session={session} marketLabel={dataState.label}
-            syncResult={dataQuality} onSchedulerChange={applyScheduler}
-            symbols={[...(Array.isArray(portfolio?.positions) && portfolio.source !== "fixture"
-              ? portfolio.positions.map((position) => String(position.symbol)) : []), ...watchlists.flatMap((list) => list.symbols)]}
-            onSyncResult={(result) => { setDataQuality(result); void refreshResources(["market", "health"]); }}
+            syncResult={dataQuality} marketSync={marketSync} syncError={marketSyncError}
+            syncSteps={marketSyncSteps} onSync={syncMarketData} onSchedulerChange={applyScheduler}
             onOpenSettings={() => setView("Profile")} /> :
           view === "Audit" ? <AuditView detail={detail} /> :
           view === "Notifications" ? <NotificationsView
@@ -2563,43 +2592,139 @@ function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unkno
   </section>;
 }
 
+const syncLabels: Record<string, string> = {
+  market_snapshot: "市场快照", trading_calendar: "交易日历", universe: "标的列表",
+  daily_bars: "个股日线", fundamentals: "基本面", research_sources: "资讯与公告",
+  news: "资讯", filing: "公告", filings: "公告", request: "复盘日期", finalizing: "整理同步结果",
+};
+
+const syncFailureReasons: Record<string, string> = {
+  Push2RateLimitError: "东财接口限流，请稍后重试。",
+  CapabilityUnavailable: "当前没有可用数据源，请检查数据源连接。",
+  ConnectionError: "数据源连接失败，请检查网络连接。",
+  STAGE_TIMEOUT: "等待数据源响应超时，请稍后重试。",
+  StageTimeout: "等待数据源响应超时，请稍后重试。",
+  TimeoutError: "等待数据源响应超时，请稍后重试。",
+  UNIVERSE_COVERAGE_MISSING: "标的列表缺少部分市场。",
+  POINT_IN_TIME_UNAVAILABLE: "数据源未提供该复盘日的市场快照。",
+  FIELD_MISSING: "数据源返回的快照缺少必需字段。",
+  AS_OF_IN_FUTURE: "复盘日期晚于当前日期。",
+  TEMPORAL_METADATA_INVALID: "数据日期或采集时间未通过校验。",
+  DATA_QUALITY_INCOMPLETE: "数据源未返回通过校验的数据。",
+};
+
+function syncIssue(failure: Record<string, unknown>) {
+  const source = scanSourceLabels[failure.provider_id as keyof typeof scanSourceLabels];
+  const code = typeof failure.code === "string" ? failure.code : "";
+  const temporalReason = typeof failure.reason === "string" ? syncFailureReasons[failure.reason] : undefined;
+  const reason = temporalReason ?? syncFailureReasons[code] ?? (code && code !== "RuntimeError"
+    ? `数据源返回异常（${code}）。` : "数据源未返回可用数据。");
+  return [failure.symbol, source, reason].filter(Boolean).join(" · ");
+}
+
+const syncStepLabels = {
+  running: "同步中", validating: "校验中", done: "已完成", reused: "已复用",
+  partial: "部分完成", failed: "失败", skipped: "已跳过",
+};
+
+function MarketSyncSteps({ steps, failures, running, canRetry, onSync }: {
+  steps: Record<string, MarketSyncProgress>;
+  failures: Array<Record<string, unknown>>;
+  running: boolean;
+  canRetry: boolean;
+  onSync: (stage: MarketSyncStage) => Promise<void>;
+}) {
+  return <ol className="market-sync-steps" aria-label="行情同步步骤">
+    {marketSyncStages.map((stage) => {
+      const step = steps[stage];
+      const status = step?.status;
+      const inProgress = status === "running" || status === "validating" || Boolean(step && !status);
+      const label = inProgress && !running ? "进度中断" : status ? syncStepLabels[status] : "等待";
+      const fetched = step?.fetched ?? 0;
+      const reused = step?.reused ?? 0;
+      const failed = step?.failed ?? 0;
+      const done = fetched + reused + failed;
+      const detail = status === "skipped" ? (step?.reason === "no_symbols" ? "无持仓或自选标的"
+        : step?.reason === "outside_scope" ? "本次未选择此项" : "数据源未提供此项")
+        : status === "validating" ? "正在核对交易日和标的覆盖"
+        : status === "reused" && (step?.total ?? 0) <= 1 ? "使用本地已验证的数据"
+        : stage === "market_snapshot" && status === "done" ? "行情已保存"
+        : step?.total && step.total > 1 ? `已处理 ${done}/${step.total} · 新拉取 ${fetched} · 复用 ${reused} · 失败 ${failed}`
+        : step?.saved_rows ? `已保存 ${step.saved_rows.toLocaleString("zh-CN")} 条`
+        : inProgress ? (step?.symbol ? `正在处理 ${step.symbol}` : "等待数据源响应")
+        : status === "done" ? "查询完成，无新增记录" : "";
+      const issues = Array.from(new Set(failures
+        .filter((failure) => failure.kind === stage || stage === "filing" && failure.kind === "filings")
+        .map(syncIssue)));
+      return <li key={stage}>
+        <div className="market-sync-step">
+          <span className="market-sync-state" data-status={status}>{label}</span>
+          <div>
+            <strong>{syncLabels[stage]}</strong>
+            {detail && <small>{detail}{inProgress && running && step?.symbol && (step.total ?? 0) > 1 && ` · 正在处理 ${step.symbol}`}</small>}
+            {step?.total && step.total > 1 && status !== "skipped" && <progress
+              className="market-sync-progress" value={done} max={step.total}
+              aria-label={`${syncLabels[stage]}处理进度`} aria-valuetext={`已处理 ${done}/${step.total} 个标的`} />}
+          </div>
+          {canRetry && status && !inProgress && (status !== "skipped" || step.reason === "outside_scope") && <button type="button" className="text-button"
+            title="重新拉取此项"
+            aria-label={`重新拉取${syncLabels[stage]}`} onClick={() => void onSync(stage)}>重拉</button>}
+        </div>
+        {issues.length > 0 && <details className="market-sync-issues">
+          <summary>{issues.length} 个问题</summary>
+          <ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+        </details>}
+      </li>;
+    })}
+  </ol>;
+}
+
 function DataHealthView({
-  health, market, session, marketLabel, syncResult, symbols, onSyncResult, onSchedulerChange, onOpenSettings,
+  health, market, session, marketLabel, syncResult, marketSync, syncError, syncSteps, onSync, onSchedulerChange, onOpenSettings,
 }: {
   health: WorkspaceHealth | null;
   market: MarketWorkspace | null;
   session: ReturnType<typeof reviewSession>;
   marketLabel: string;
   syncResult: Record<string, unknown> | null;
-  symbols: string[];
-  onSyncResult: (result: Record<string, unknown>) => void;
+  marketSync: ActiveMarketSync | null;
+  syncError: string;
+  syncSteps: Record<string, MarketSyncProgress>;
+  onSync: (stage?: MarketSyncStage) => Promise<void>;
   onSchedulerChange: (value: SchedulerResponse) => void;
   onOpenSettings: () => void;
 }) {
   const api = useWorkspaceApi();
-  const [pending, setPending] = useState<"sync" | "scheduler" | null>(null);
+  const [schedulerPending, setSchedulerPending] = useState(false);
   const [status, setStatus] = useState("");
+  const [now, setNow] = useState(Date.now);
+  const startedAt = marketSync?.startedAt;
+  useEffect(() => {
+    if (startedAt === undefined) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  const elapsed = startedAt === undefined ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
   const demo = health?.provider.provider_id === "fixture";
   const lastVerified = market?.last_verified ?? (market?.as_of && market.as_of <= session.as_of
     && market.quality === "verified" && (demo || !isDemoMarket(market)) ? market : null);
   const failures = Array.isArray(syncResult?.failures) ? syncResult.failures as Array<Record<string, unknown>> : [];
-  const failureLabels = { market_snapshot: "市场快照", daily_bars: "个股日线", universe: "标的列表", trading_calendar: "交易日历", fundamentals: "基本面", research_sources: "资讯与公告" };
-  const rateLimited = failures.some((failure) => failure.code === "Push2RateLimitError");
-  const sync = async () => {
-    setPending("sync");
-    setStatus("");
-    try {
-      const codes = [...new Set(symbols.flatMap((symbol) => stockCode(symbol) ?? []))];
-      const result = await api.syncData(session.as_of, codes);
-      onSyncResult(result);
-    } catch (error) {
-      setStatus(friendlyError(error, "市场数据同步失败，请稍后重试。"));
-    } finally {
-      setPending(null);
-    }
-  };
+  const storedSteps = Array.isArray(syncResult?.stages) ? syncResult.stages as MarketSyncProgress[] : [];
+  const steps = storedSteps.length ? Object.fromEntries(storedSteps.map((step) => [step.stage, step])) : syncSteps;
+  const hasSteps = Boolean(storedSteps.length || Object.values(syncSteps).some((step) =>
+    step.stage !== "finalizing" && step.status,
+  ) || marketSync && !Object.keys(syncSteps).length);
+  const legacyProgress = marketSync && !hasSteps ? Object.values(syncSteps).at(-1) : undefined;
+  const finished = marketSyncStages.filter((stage) => {
+    const status = steps[stage]?.status;
+    return status && status !== "running" && status !== "validating";
+  }).length;
+  const issues = failures.filter((failure) => !hasSteps || !Object.hasOwn(steps, String(failure.kind)));
+  const saved = Object.entries((syncResult?.counts ?? {}) as Record<string, number>)
+    .filter(([kind, count]) => syncLabels[kind] && count > 0)
+    .map(([kind, count]) => `${syncLabels[kind]} ${count.toLocaleString("zh-CN")} 条`);
   const toggleScheduler = async () => {
-    setPending("scheduler");
+    setSchedulerPending(true);
     setStatus("");
     try {
       const result = await (health?.scheduler?.enabled ? api.stopScheduler() : api.startScheduler());
@@ -2608,7 +2733,7 @@ function DataHealthView({
     } catch (error) {
       setStatus(friendlyError(error, "调度状态更新失败"));
     } finally {
-      setPending(null);
+      setSchedulerPending(false);
     }
   };
   return <section className="control-grid">
@@ -2618,14 +2743,35 @@ function DataHealthView({
         <div><span>当前状态</span><strong>{marketLabel}</strong></div>
         <div><span>最近可用行情</span><strong>{lastVerified?.as_of ? [lastVerified.as_of, localizedLabel(scanSourceLabels, lastVerified.source, "来源未知")].join(" · ") : "暂无快照"}</strong></div>
         {lastVerified?.observed_at && <div><span>数据时间</span><strong>{formatDate(lastVerified.observed_at)}</strong></div>}
-        {syncResult && <div><span>最近一次同步</span><strong>{String(syncResult.as_of ?? session.as_of)} · {localizedLabel(qualityLabels, syncResult.quality, "未知")}</strong></div>}
+        {syncResult && <div><span>最近一次同步</span><strong>{String(syncResult.as_of ?? session.as_of)} · {syncResult.quality === "partial" ? "部分完成" : syncResult.quality === "verified" ? "已完成" : localizedLabel(qualityLabels, syncResult.quality, "未知")}</strong></div>}
       </div>
-      {failures.length > 0 && <div className="sync-failures" role="status">
-        <strong>暂未取到 {Array.from(new Set(failures.map((failure) => localizedLabel(failureLabels, failure.kind, "部分数据")))).join("、")}</strong>
-        <p>{rateLimited ? "上游行情服务限流，请稍后再同步，或到设置检查备用数据源。" : "可以稍后重试，或到设置检查数据源和凭据。"}</p>
+      {(marketSync || hasSteps) && <div className="form-hint">
+        <strong role="status">{marketSync && `${marketSync.asOf} · `}{legacyProgress
+          ? `${syncLabels[legacyProgress.stage] ?? "同步中"}${legacyProgress.symbol ? ` · ${legacyProgress.symbol}` : ""}`
+          : `${finished}/${marketSyncStages.length} 项已结束`}
+          {marketSync && syncSteps.finalizing && " · 正在整理结果"}</strong>
+        {hasSteps && <progress className="market-sync-progress" value={finished} max={marketSyncStages.length}
+          aria-label="行情同步总进度" aria-valuetext={`${finished}/${marketSyncStages.length} 项已结束`} />}
+        {marketSync && <div>已用时 {Math.floor(elapsed / 60)} 分 {elapsed % 60} 秒</div>}
+      </div>}
+      {hasSteps && <MarketSyncSteps steps={steps} failures={failures} running={Boolean(marketSync)}
+        canRetry={!marketSync && !schedulerPending && syncResult?.as_of === session.as_of} onSync={onSync} />}
+      {syncError && <p className="sync-failures" role="alert">{syncError}</p>}
+      {syncResult && <p className="form-hint" role="status">
+        {syncResult.market_snapshot_quality === "verified" ? "复盘行情已就绪。"
+          : steps.market_snapshot?.status === "skipped" ? "本次未更新市场快照。" : "本次市场快照未通过校验。"}
+        {saved.length > 0 && ` 本次新保存 ${saved.join("、")}。`}
+      </p>}
+      {issues.length > 0 && <div className="sync-failures">
+          <strong>同步遇到的问题</strong>
+          <ul>{Array.from(new Set(issues.map((issue) =>
+            `${syncLabels[String(issue.kind)] ?? "部分数据"} · ${syncIssue(issue)}`,
+          ))).map((issue) => <li key={issue}>{issue}</li>)}</ul>
       </div>}
       <div className="form-row">
-        <button className="primary-button" disabled={pending !== null} onClick={() => void sync()}>{pending === "sync" ? "正在同步…" : "同步市场数据"}</button>
+        <button className="primary-button" disabled={Boolean(marketSync) || schedulerPending} onClick={() => void onSync()}>
+          {marketSync ? "正在同步…" : syncResult?.as_of === session.as_of ? "补齐缺失数据" : "同步市场数据"}
+        </button>
         <button className="quiet-button" onClick={onOpenSettings}>数据源设置</button>
       </div>
     </Panel>
@@ -2636,7 +2782,7 @@ function DataHealthView({
         <div><span>上次触发</span><strong>{health?.scheduler?.last_dispatched_date ?? "尚未运行"}</strong></div>
       </div>
       <div className="form-row">
-        <button className="quiet-button" disabled={pending !== null} onClick={() => void toggleScheduler()}>{health?.scheduler?.enabled ? "停止调度" : "开启调度"}</button>
+        <button className="quiet-button" disabled={Boolean(marketSync) || schedulerPending} onClick={() => void toggleScheduler()}>{health?.scheduler?.enabled ? "停止调度" : "开启调度"}</button>
       </div>
     </Panel>
     <Panel title="连接">
