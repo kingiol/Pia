@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import inspect
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
@@ -25,6 +26,7 @@ class CapabilityUnavailable(RuntimeError):
 def routed_call(
     runtime: Any, capability: str, method_name: str, args: tuple,
     kwargs: dict[str, Any], *, fixture_name: str | None = None,
+    accept_result: Callable[[Any], tuple[bool, str | None]] | None = None,
 ) -> tuple[Any, Any]:
     from .runtime import _provider_result_quality
 
@@ -75,12 +77,15 @@ def routed_call(
             )
             if not temporal["valid"]:
                 return False, temporal["errors"][0]["code"]
+        if valid and accept_result is not None:
+            return accept_result(result)
         return valid, reason
 
     def record(attempt: dict[str, Any]) -> None:
         attempt = {
             **attempt, "ordinal": len(attempts) + 1,
             "fallback_from": attempts[-1]["provider_id"] if attempts else None,
+            "as_of": as_of, "subject": subject or None,
         }
         attempts.append(attempt)
         runtime.db.execute(

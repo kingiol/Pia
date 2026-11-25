@@ -51,3 +51,8 @@ _Avoid_: Alpha, Proven edge
 
 从 Decision Record 到一个或多个 Retrospective，再到可选 Derived Memory 的完整生命周期。Decision Cycle 的阶段和时间点必须可回放。
 _Avoid_: Trade lifecycle
+
+## Daily Holdings Review
+
+收盘持仓复核。针对指定交易日，用确认的持仓和现金以及当日未复权收盘价核对个人持仓规则，并保留复核结果及其依据。
+_Avoid_: Market Review, Retrospective

@@ -36,6 +36,7 @@ from .decision_context import (
 )
 from .decision_synthesizer import graph_opinions, synthesize, valid_evidence_ids
 from .events import EventEngine
+from . import holdings_review
 from .llm import CredentialsRequired, DeepSeekClient, LLMError, ModelRoute, ModelRouter
 from .journal import DecisionJournal
 from .models import Decision, DecisionStatus, Evidence, Task, TaskStatus, new_id, now_iso
@@ -805,6 +806,8 @@ class PiaRuntime:
             detail["task"]["result_metadata"] = metadata
             if detail["decision"]:
                 detail["decision"]["result_metadata"] = metadata
+            if detail["task"]["trigger_type"] == holdings_review.TRIGGER:
+                detail["holdings_review"] = holdings_review.task_review(self, task_id, user_id)
         return detail
 
     def export_task(self, task_id, user_id="default"):
@@ -931,6 +934,10 @@ class PiaRuntime:
         task = self.db.get_task(task_id)
         if not task or task.user_id != user_id:
             raise KeyError(task_id)
+        if task.trigger_type == holdings_review.TRIGGER:
+            review = holdings_review.task_review(self, task_id, user_id)
+            if not review or not review["confirmed_at"]:
+                raise ValueError("HOLDINGS_REVIEW_NOT_CONFIRMED")
         retrospective = self.db.save_retrospective(
             task_id=task_id,
             user_id=user_id,
@@ -1069,6 +1076,7 @@ class PiaRuntime:
         frozen_binding: dict[str, Any] | None = None,
         frozen_pack: dict[str, Any] | None = None,
         preserve_execution_mode: bool = False,
+        autostart: bool = True,
     ) -> Task:
         target = dict(target or {})
         fixture = fixture or {}
@@ -1105,7 +1113,7 @@ class PiaRuntime:
                     copied_pack["execution_mode"] = frozen_pack["execution_mode"]
                 self.db.save_context_pack(task, copied_pack)
         self._emit(task, "TASK_QUEUED", {"trigger_type": trigger_type, "target": target})
-        if self.settings.autostart_tasks and self.settings.mode != "cloud":
+        if autostart and self.settings.autostart_tasks and self.settings.mode != "cloud":
             self.run_task(task.id, fixture)
         return task
 
@@ -1241,6 +1249,8 @@ class PiaRuntime:
     ) -> int:
         changed = 0
         for task in self.db.list_tasks(user_id):
+            if task.trigger_type == holdings_review.TRIGGER:
+                continue
             task_priority = int(task.target.get("_priority", 0))
             if task_priority >= priority or task.status not in {
                 TaskStatus.QUEUED, TaskStatus.PLANNING,
@@ -1260,6 +1270,10 @@ class PiaRuntime:
             raise KeyError(task_id)
         if existing.status not in {TaskStatus.RETRYABLE, TaskStatus.FAILED, TaskStatus.TIMEOUT, TaskStatus.WAITING_APPROVAL, TaskStatus.BLOCKED, TaskStatus.NO_ACTION}:
             raise ValueError(f"task is not retryable from {existing.status}")
+        if existing.trigger_type == holdings_review.TRIGGER:
+            if existing.target.get("_replay_of"):
+                return self.replay_task(existing.target["_replay_of"], user_id)
+            return self.start_holdings_review(user_id, as_of=existing.target["as_of"])
         target = dict(existing.target)
         target.pop("_runtime_consumed_seconds", None)
         if existing.data_snapshot_id and not target.get("_market_snapshot_id"):
@@ -1299,6 +1313,11 @@ class PiaRuntime:
         notes: str = "",
         user_id: str = "default",
     ) -> dict[str, Any]:
+        task = self.db.get_task(task_id)
+        if not task or task.user_id != user_id:
+            raise KeyError(task_id)
+        if task.trigger_type == holdings_review.TRIGGER:
+            raise ValueError("USE_HOLDINGS_REVIEW_CONFIRMATION")
         if action == "APPROVE":
             detail = self.task_detail(task_id, user_id)
             if not detail:
@@ -1446,6 +1465,8 @@ class PiaRuntime:
             values = {key: payload[key] for key in ("quantity", "avg_cost", "market_value")}
             if not values["quantity"] or any(not 0 <= value <= sys.float_info.max for value in values.values()):
                 raise ValueError("INVALID_PORTFOLIO_VALUES")
+            if "sector" in payload:
+                values["sector"] = payload["sector"].strip()
         today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
         as_of = payload["as_of"]
         if date.fromisoformat(as_of).isoformat() != as_of or as_of > today:
@@ -2173,10 +2194,17 @@ class PiaRuntime:
         method_name: str,
         *args: Any,
         fixture_name: str | None = None,
+        accept_result=None,
         **kwargs: Any,
     ) -> tuple[Any, Any]:
         """Resolve one capability with bounded attempts and frozen provenance."""
-        return routed_call(self, capability, method_name, args, kwargs, fixture_name=fixture_name)
+        return routed_call(
+            self, capability, method_name, args, kwargs,
+            fixture_name=fixture_name, accept_result=accept_result,
+        )
+
+    def start_holdings_review(self, user_id="default", **kwargs):
+        return holdings_review.start(self, user_id, **kwargs)
 
     def is_trading_day(self, as_of: str) -> bool:
         """Resolve the provider trading calendar, with a conservative weekday fallback."""
@@ -2368,7 +2396,8 @@ class PiaRuntime:
         self._provider_context.user_id = task.user_id
         self._provider_context.task_id = task.id
         required_stages = []
-        if self.settings.require_llm and not (fixture or task.target.get("_fixture") or task.target.get("_replay_of")):
+        if (self.settings.require_llm and task.trigger_type != holdings_review.TRIGGER
+                and not (fixture or task.target.get("_fixture") or task.target.get("_replay_of"))):
             required_stages.append("llm_research")
         if task.trigger_type in {"FilingPublished", "AnnouncementPublished"}:
             required_stages.append("supplemental_data")
@@ -2386,6 +2415,14 @@ class PiaRuntime:
             if not binding:
                 raise ValueError("TASK_CONTEXT_INCOMPLETE")
             existing_pack = self.db.get_context_pack(task.id, task.user_id)
+            if task.trigger_type == holdings_review.TRIGGER:
+                if not existing_pack:
+                    budget.start("required_data")
+                    existing_pack = holdings_review.build_pack(self, task, binding)
+                    budget.check()
+                    budget.finish()
+                holdings_review.execute(self, task, existing_pack)
+                return
             if existing_pack:
                 self._execute_context(task, existing_pack, fixture)
                 return

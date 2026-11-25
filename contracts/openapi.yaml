@@ -974,6 +974,67 @@ paths:
                 $ref: "#/components/schemas/PortfolioResponse"
         "409":
           description: The snapshot changed, the position already exists, or the position input is invalid
+  /api/holdings-review:
+    get:
+      responses:
+        "200":
+          description: Latest closed session, selected holdings snapshot and latest review attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [as_of, portfolio_as_of, portfolio_snapshot_id, rule_snapshot_id, attempt]
+                properties:
+                  as_of: {type: string, format: date}
+                  portfolio_as_of: {type: [string, "null"], format: date}
+                  portfolio_snapshot_id: {type: [string, "null"]}
+                  rule_snapshot_id: {type: string}
+                  attempt:
+                    anyOf:
+                      - $ref: "#/components/schemas/HoldingsReview"
+                      - type: "null"
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cash: {type: number, minimum: 0}
+                as_of: {type: string, format: date}
+                portfolio_snapshot_id: {type: string}
+              dependentRequired:
+                cash: [as_of, portfolio_snapshot_id]
+      responses:
+        "202":
+          description: Review task for the latest closed session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "409":
+          description: Selected session or portfolio snapshot changed
+  /api/holdings-review/confirm:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id, unchanged]
+              properties:
+                task_id: {type: string}
+                unchanged: {type: boolean}
+      responses:
+        "200":
+          description: Confirmed holdings review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoldingsReview"
+        "409":
+          description: Review inputs changed or the review is incomplete
   /api/candidates:
     get:
       parameters:
@@ -1142,11 +1203,38 @@ components:
         quantity: {type: number, exclusiveMinimum: 0}
         avg_cost: {type: number, minimum: 0}
         market_value: {type: number, minimum: 0}
+        sector: {type: string, maxLength: 80}
       if:
         properties:
           mode: {enum: [add, edit]}
       then:
         required: [quantity, avg_cost, market_value]
+    HoldingsReview:
+      type: object
+      required: [task_id, as_of, task_status, confirmed_at, replay, error, result]
+      properties:
+        task_id: {type: string}
+        as_of: {type: string, format: date}
+        task_status: {type: string}
+        confirmed_at: {type: [string, "null"], format: date-time}
+        replay: {type: boolean}
+        error: {type: [string, "null"]}
+        result:
+          type: [object, "null"]
+          properties:
+            calculation: {type: string, enum: [empty, incomplete, clear, breach]}
+            issues: {type: array, items: {type: string}}
+            portfolio_as_of: {type: [string, "null"], format: date}
+            portfolio_snapshot_id: {type: [string, "null"]}
+            needs_confirmation: {type: boolean}
+            cash: {type: [number, "null"]}
+            nav: {type: [number, "null"]}
+            covered: {type: integer}
+            total: {type: integer}
+            positions: {type: array, items: {type: object}}
+            checks: {type: array, items: {type: object}}
+            rule_snapshot_id: {type: string}
+            data_mode: {type: string, enum: [fixture, live]}
     InvestorProfile:
       $ref: "./schemas/profile.json"
     PortfolioSnapshot:
@@ -1186,6 +1274,8 @@ components:
       properties:
         result_metadata:
           $ref: "./schemas/result-metadata.json"
+        holdings_review:
+          $ref: "#/components/schemas/HoldingsReview"
         llm_ledger:
           type: object
           additionalProperties: true

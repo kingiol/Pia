@@ -28,6 +28,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { useWorkspaceApi, marketSyncStages, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
+import { HoldingsReviewCard, HoldingsReviewResult } from "./components/HoldingsReview";
 import type { CandidateListResponse, LocalCredentialStatus, MarketSyncProgress, MarketSyncStage, MarketWorkspace, Retrospective, RuleReason, SchedulerResponse, WorkspaceHealth } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
@@ -1104,6 +1105,8 @@ export function App({
           onRetry={() => void refreshResources(["profile", "portfolio", "rules", "market"])} />}
         {view === "Overview" && <AttentionFeed notifications={notifications} onOpenTask={goToResearch}
           load={resourceLoads.notifications} onRetry={() => void refreshResources(["notifications"])} />}
+        {view === "Overview" && runtimeMode !== "cloud" && <HoldingsReviewCard
+          onOpenTask={goToResearch} onOpenPortfolio={() => setView("Portfolio")} />}
 
         {view === "Overview" && <section className="metrics" aria-label="研究统计">
           <div className="metric"><span>进行中的研究</span><strong>{counts.running}</strong><small>实时更新进度</small></div>
@@ -1172,7 +1175,9 @@ export function App({
               : <EmptyState message="选择一条研究记录，这里会显示结论、依据和风险。" />
               : <ResearchDetail key={detail.task.id} detail={detail} busy={busy} rawData={taskData?.task_id === detail.task.id ? taskData : null} onApprove={(action) => void approve(detail.task.id, action)} onControl={controlTask} onCancel={() => void cancelTask()} onRetry={() => void retryTask()} onTakeover={() => void takeoverTask()} onExport={() => void exportTaskContext()} onReplay={() => void replayTask()} onRawData={() => void loadTaskData()} onCopyLink={() => void copyTaskLink()} onCopyEvidenceLink={(evidenceId) => void copyEvidenceLink(evidenceId)}
                 onRetrospective={(payload) => recordRetrospective(detail.task.id, payload)}
-                onOpenJournal={() => openJournal(detail.task.id)} onOpenPortfolio={() => setView("Portfolio")} />}
+                onOpenJournal={() => openJournal(detail.task.id)} onOpenPortfolio={() => setView("Portfolio")}
+                onHoldingsConfirmed={() => loadDetail(detail.task.id)}
+                onHoldingsRetry={() => { setMobileDetailOpen(false); setView("Overview"); }} />}
           </section>
         </div>}
         {view === "Overview" && <StrategyAgentPanel
@@ -1653,7 +1658,7 @@ function TaskQueue({ tasks, selectedId, onSelect, onOpen }: {
       <div className="task-group-heading"><span>{group.label}</span><strong>{grouped.length}</strong></div>
       {grouped.map((task) => <button id={`task-${task.id}`} role="option" aria-selected={selectedId === task.id} key={task.id} className={`queue-row ${selectedId === task.id ? "selected" : ""}`} onClick={() => onOpen(task.id)}>
         <div className="queue-row-top"><StatusBadge status={task.status} /><time>{formatDate(task.created_at)}</time></div>
-        <strong>{task.trigger_type === "MarketClose" ? "收盘市场复盘" : task.trigger_type === "StockResearch" && task.target.symbol ? `${String(task.target.symbol)} 研究` : task.trigger_type}</strong>
+        <strong>{task.trigger_type === "DailyHoldingsReview" ? "收盘持仓复核" : task.trigger_type === "MarketClose" ? "收盘市场复盘" : task.trigger_type === "StockResearch" && task.target.symbol ? `${String(task.target.symbol)} 研究` : task.trigger_type}</strong>
         <span>{String(task.target.as_of ?? "日期未记录")} · {task.id.slice(-6)}</span>
       </button>)}
     </section>;
@@ -2169,6 +2174,7 @@ function PortfolioPositionDialog({ draft, onClose, onChanged }: {
           quantity,
           avg_cost: Number(fields.get("avg_cost")),
           market_value: Number(fields.get("market_value")),
+          sector: String(fields.get("sector") ?? "").trim(),
         });
         onChanged(portfolio);
         onClose();
@@ -2190,6 +2196,7 @@ function PortfolioPositionDialog({ draft, onClose, onChanged }: {
           <label>持有数量（股 / 份）<input name="quantity" type="number" min="0" step="any" required defaultValue={String(position?.quantity ?? "")} /></label>
           <label>平均成本（元 / 股或份）<input name="avg_cost" type="number" min="0" step="any" required defaultValue={String(position?.avg_cost ?? "")} /></label>
           <label>持仓总市值（元）<input name="market_value" type="number" min="0" step="any" required defaultValue={String(position?.market_value ?? "")} /></label>
+          <label>所属行业（股票）<input name="sector" maxLength={80} defaultValue={position?.sector === "unknown" ? "" : String(position?.sector ?? "")} /></label>
         </>}
       </fieldset>
       {error && <p className="auth-error" role="alert">{error}</p>}
@@ -2278,7 +2285,7 @@ function PortfolioImportDialog({ defaultDate, onClose, onImported }: {
             <option value="manual">JSON</option>
           </select></label>
           <label>持仓数据<textarea name="content" className="portfolio-import-content" required
-            placeholder={pasteFormat === "csv" ? "symbol,quantity,avg_cost,market_value" : undefined} /></label>
+            placeholder={pasteFormat === "csv" ? "symbol,quantity,avg_cost,market_value,sector" : undefined} /></label>
         </>}
       </fieldset>
       {error && <p className="auth-error" role="alert">{error}</p>}
@@ -2833,7 +2840,8 @@ function AuditView({ detail }: { detail: TaskDetail | null }) {
   </section>;
 }
 
-function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel, onRetry, onTakeover, onExport, onReplay, onRawData, onCopyLink, onCopyEvidenceLink, onRetrospective, onOpenJournal, onOpenPortfolio }: { detail: TaskDetail; busy: boolean; rawData: TaskDataResponse | null; onApprove: (action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH") => void; onControl: (action: "pause" | "resume") => void; onCancel: () => void; onRetry: () => void; onTakeover: () => void; onExport: () => void; onReplay: () => void; onRawData: () => void; onCopyLink: () => void; onCopyEvidenceLink: (evidenceId: string) => void; onRetrospective: (payload: RetrospectiveInput) => Promise<void>; onOpenJournal: () => void; onOpenPortfolio: () => void }) {
+function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel, onRetry, onTakeover, onExport, onReplay, onRawData, onCopyLink, onCopyEvidenceLink, onRetrospective, onOpenJournal, onOpenPortfolio, onHoldingsConfirmed, onHoldingsRetry }: { detail: TaskDetail; busy: boolean; rawData: TaskDataResponse | null; onApprove: (action: "APPROVE" | "REJECT" | "NO_ACTION" | "REQUEST_MORE_RESEARCH" | "MARK_AS_WATCH") => void; onControl: (action: "pause" | "resume") => void; onCancel: () => void; onRetry: () => void; onTakeover: () => void; onExport: () => void; onReplay: () => void; onRawData: () => void; onCopyLink: () => void; onCopyEvidenceLink: (evidenceId: string) => void; onRetrospective: (payload: RetrospectiveInput) => Promise<void>; onOpenJournal: () => void; onOpenPortfolio: () => void; onHoldingsConfirmed: () => Promise<void>; onHoldingsRetry: () => void }) {
+  const holdingsReview = detail.holdings_review;
   const decision = detail.decision;
   const rules = decision?.rationale.rules;
   const ruleReasons = [...(rules?.reasons ?? []), ...(rules?.warnings ?? [])];
@@ -2850,7 +2858,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
   const positionBlocker = firstBlocker && ["POSITION_LIMIT_EXCEEDED", "ETF_POSITION_LIMIT", "SECTOR_CONCENTRATION"].includes(firstBlocker.code);
   const marketDate = detail.evidence.find((item) => item.source_type === "market")?.as_of;
   const usesDemoMarket = detail.evidence.some((item) => item.source_type === "market" && (item.source === "fixture" || item.provider_id === "fixture"));
-  const taskTitle = detail.task.trigger_type === "MarketClose" ? "收盘市场复盘" : symbol ? `${symbol} 研究` : detail.task.trigger_type;
+  const taskTitle = holdingsReview ? "收盘持仓复核" : detail.task.trigger_type === "MarketClose" ? "收盘市场复盘" : symbol ? `${symbol} 研究` : detail.task.trigger_type;
   const [evidenceQuery, setEvidenceQuery] = useState("");
   const [evidenceQualityFilter, setEvidenceQualityFilter] = useState("all");
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
@@ -2868,7 +2876,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
     <div className="detail-heading">
       <div><span className="eyebrow">研究简报 · {dataDate}</span><h2>{taskTitle}</h2><span className="detail-id">{detail.task.trigger_type} · {detail.task.id}</span></div>
       <div className="detail-actions">
-        <StatusBadge status={detail.task.status} />
+        {!holdingsReview && <StatusBadge status={detail.task.status} />}
         <button className="icon-button" title="复制链接" aria-label="复制链接" onClick={onCopyLink} disabled={busy}><LinkSimpleIcon size={16} aria-hidden="true" /></button>
         <button className="icon-button" title="原始数据" aria-label="原始数据" onClick={onRawData} disabled={busy}><DatabaseIcon size={16} aria-hidden="true" /></button>
         <button className="icon-button" title="回放研究" aria-label="回放研究" onClick={onReplay} disabled={busy}><ArrowCounterClockwiseIcon size={16} aria-hidden="true" /></button>
@@ -2876,16 +2884,18 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
         {detail.task.status === "QUEUED" && <button className="danger-button" onClick={onCancel} disabled={busy}>取消</button>}
         {["PLANNING", "RUNNING", "REVIEWING"].includes(detail.task.status) && <><button className="quiet-button" onClick={() => onControl("pause")} disabled={busy}>暂停</button><button className="danger-button" onClick={onCancel} disabled={busy}>取消</button></>}
         {detail.task.status === "PAUSED" && <><button className="primary-button" onClick={() => onControl("resume")} disabled={busy}>继续</button><button className="danger-button" onClick={onCancel} disabled={busy}>取消</button></>}
-        {["RETRYABLE", "FAILED", "TIMEOUT"].includes(detail.task.status) && <><button className="quiet-button" onClick={onTakeover} disabled={busy}>接管研究</button><button className="primary-button" onClick={onRetry} disabled={busy}>重试</button></>}
+        {!holdingsReview && ["RETRYABLE", "FAILED", "TIMEOUT"].includes(detail.task.status) && <><button className="quiet-button" onClick={onTakeover} disabled={busy}>接管研究</button><button className="primary-button" onClick={onRetry} disabled={busy}>重试</button></>}
       </div>
     </div>
-    <div className="decision-strip">
+    {holdingsReview && <HoldingsReviewResult review={holdingsReview} onConfirmed={onHoldingsConfirmed}
+      onOpenPortfolio={onOpenPortfolio} onRetry={onHoldingsRetry} />}
+    {!holdingsReview && <div className="decision-strip">
       <div><span className="eyebrow">研究结论</span><strong className={`decision-${(decision?.status ?? "PENDING").toLowerCase()}`}>{statusLabel(decision?.status ?? "PENDING")}</strong>
         {firstBlocker && <p className="decision-reason">{ruleReasonLabel(firstBlocker)} · {ruleComparison(firstBlocker)}{(rules?.reasons.length ?? 0) > 1 && <> · <a href="#research-rules">查看全部 {rules?.reasons.length} 项</a></>}</p>}
         <span>{detail.task.error?.code === "PORTFOLIO_AS_OF_UNAVAILABLE" ? `没有 ${dataDate} 或更早的持仓快照。请导入对应日期的持仓，再重试。` : decision?.next_action ? `下一步：${nextActionLabel(decision.next_action)}` : "当前尚无研究结论"}</span></div>
       <div className="decision-meta"><span>信心 <b>{localizedLabel(levelLabels, decision?.confidence)}</b></span><span>风险 <b>{localizedLabel(levelLabels, decision?.risk_level)}</b></span>{marketDate && <span>{usesDemoMarket ? "演示行情" : "行情日期"} <b>{marketDate}</b></span>}{portfolioEvidence && <span>{usesDemoPortfolio ? "示例持仓" : "持仓日期"} <b>{portfolioEvidence.as_of}</b></span>}</div>
-    </div>
-    {decision && <section className="research-next panel" aria-label="处理研究">
+    </div>}
+    {decision && (!holdingsReview || holdingsReview.confirmed_at) && <section className="research-next panel" aria-label="处理研究">
       <div className="research-next-actions">
         {detail.evidence.length > 0 && <a className="quiet-button"
           href={positionBlocker && portfolioEvidence ? `#evidence-${portfolioEvidence.id}` : "#research-evidence"}
@@ -2926,6 +2936,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
         </div>
       </form>}
     </section>}
+    {!holdingsReview && <>
     <div className="result-summary" role="status">
       <strong>结果：{["QUEUED", "PLANNING", "RUNNING", "REVIEWING", "PAUSED"].includes(detail.task.status) ? "处理中" : ({ complete: "完整", partial: "部分结果", none: "无可用结果", unknown: "历史完整性未知" })[detail.result_metadata?.completion ?? "unknown"]}</strong>
       <span> · 数据 {localizedLabel(qualityLabels, detail.result_metadata?.quality_summary, "未知")} · {canApprove ? "可确认建议" : needsReview ? "待处理 · 仅供研究" : "仅供研究"}</span>
@@ -2970,6 +2981,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
         {canApprove && <button className="primary-button" onClick={() => onApprove("APPROVE")} disabled={busy}>确认建议</button>}
       </div>
     </section>}
+    </>}
     <Panel title="依据" eyebrow={`${evidence.length} / ${detail.evidence.length} 条引用来源`} wide>
         <span id="research-evidence" />
         <div className="evidence-filters">
@@ -3001,7 +3013,7 @@ function ResearchDetail({ detail, busy, rawData, onApprove, onControl, onCancel,
       {detail.llm_ledger && <p className="form-hint">费用 ${detail.llm_ledger.known_cost_usd} · 保守占用 ${detail.llm_ledger.conservative_reserved_usd} · {detail.llm_ledger.unknown_count} 次费用未知 · 日预算按 UTC 结算</p>}
     </Panel>
     {rawData && <TaskDataPanel data={rawData} />}
-    <RetrospectivePanel retrospectives={detail.retrospectives ?? []} busy={busy} onSubmit={onRetrospective} onOpenJournal={onOpenJournal} />
+    {(!holdingsReview || holdingsReview.confirmed_at) && <RetrospectivePanel retrospectives={detail.retrospectives ?? []} busy={busy} onSubmit={onRetrospective} onOpenJournal={onOpenJournal} />}
   </div>;
 }
 

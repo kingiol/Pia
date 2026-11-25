@@ -752,3 +752,38 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .candidate-factors { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: 12px; padding-block: 8px; }
  .result-summary { padding-block: 12px; overflow-wrap: anywhere; }
  .result-summary p { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.holdings-review {
+  margin-block: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.holdings-review-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.holdings-review-heading h2,
+.holdings-review-heading h3,
+.holdings-rule-results h4 {
+  margin: 0;
+}
+.holdings-review-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 0;
+  list-style: none;
+}
+.holdings-rule-results {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
+  margin-block: 16px;
+}
+.holdings-review li,
+.holdings-review p {
+  overflow-wrap: anywhere;
+}

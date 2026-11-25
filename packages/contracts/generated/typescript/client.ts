@@ -11,6 +11,53 @@ import type {
   SyncResponse,
 } from "./models";
 
+export type HoldingsReviewCheck = {
+  kind: "stock" | "etf" | "sector";
+  limit: number;
+  status: "clear" | "breach" | "unavailable";
+  items: Array<{ label: string; actual: number; breach: boolean }>;
+};
+export type HoldingsReview = {
+  task_id: string;
+  as_of: string;
+  task_status: ResearchTask["status"];
+  confirmed_at: string | null;
+  replay: boolean;
+  error: string | null;
+  result: {
+    calculation: "empty" | "incomplete" | "clear" | "breach";
+    issues: string[];
+    portfolio_as_of: string | null;
+    portfolio_snapshot_id: string | null;
+    needs_confirmation: boolean;
+    cash: number | null;
+    nav: number | null;
+    covered: number;
+    total: number;
+    checks: HoldingsReviewCheck[];
+    positions: Array<{
+      symbol: string;
+      asset_type: string;
+      sector: string | null;
+      quantity: number | null;
+      close: number | null;
+      market_value: number | null;
+      provider_id: string | null;
+      observed_at: string | null;
+      failed_attempts: Array<{ provider_id: string; reason: string | null }>;
+    }>;
+    rule_snapshot_id: string;
+    data_mode: "fixture" | "live";
+  } | null;
+};
+export type HoldingsReviewSummary = {
+  as_of: string;
+  portfolio_as_of: string | null;
+  portfolio_snapshot_id: string | null;
+  rule_snapshot_id: string;
+  attempt: HoldingsReview | null;
+};
+
 export type TaskListResponse = { tasks: ResearchTask[] };
 export type TaskResponse = { task: ResearchTask };
 export type TaskDetailResponse = {
@@ -628,12 +675,30 @@ export class PiaApiClient {
     });
   }
 
+  holdingsReview(): Promise<HoldingsReviewSummary> {
+    return this.request("/holdings-review");
+  }
+
+  startHoldingsReview(payload?: {
+    as_of: string; portfolio_snapshot_id: string; cash: number;
+  }): Promise<TaskResponse> {
+    return this.request("/holdings-review", {
+      method: "POST", body: JSON.stringify(payload ?? {}),
+    });
+  }
+
+  confirmHoldingsReview(taskId: string, unchanged: boolean): Promise<HoldingsReview> {
+    return this.request("/holdings-review/confirm", {
+      method: "POST", body: JSON.stringify({ task_id: taskId, unchanged }),
+    });
+  }
+
   savePortfolioPosition(payload: {
     snapshot_id: string | null;
     as_of: string;
     symbol: string;
     position_index?: number;
-  } & ({ mode: "delete" } | { mode: "add" | "edit"; quantity: number; avg_cost: number; market_value: number })): Promise<{ portfolio: PortfolioSnapshot }> {
+  } & ({ mode: "delete" } | { mode: "add" | "edit"; quantity: number; avg_cost: number; market_value: number; sector?: string })): Promise<{ portfolio: PortfolioSnapshot }> {
     return this.request("/portfolio/positions", {
       method: "POST",
       body: JSON.stringify(payload),
