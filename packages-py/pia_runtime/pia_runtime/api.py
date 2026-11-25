@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .runtime import PiaRuntime
+from . import holdings_review
 from .schema import SchemaValidationError, validate_named, validate_schema
 from .security import redact_secrets
 
@@ -238,6 +239,8 @@ def serve(
                     if snapshot is None:
                         snapshot = runtime.db.get_latest_portfolio_snapshot(user_id)
                     return self._send(200, snapshot or {"status": "unavailable"})
+                if path == "/api/holdings-review":
+                    return self._send(200, holdings_review.summary(runtime, self._user_id() or "default"))
                 if path == "/api/market":
                     return self._send(200, runtime.market_workspace())
                 if path == "/api/candidates":
@@ -386,6 +389,28 @@ def serve(
                 if path in LOCAL_CREDENTIAL_PATHS:
                     return self._local_credential_request(path)
                 body = self._body()
+                if path == "/api/holdings-review":
+                    validate_schema(body, {
+                        "type": "object", "additionalProperties": False,
+                        "properties": {
+                            "cash": {"type": "number", "minimum": 0},
+                            "as_of": {"type": "string", "format": "date"},
+                            "portfolio_snapshot_id": {"type": "string"},
+                        },
+                    })
+                    task = runtime.start_holdings_review(
+                        self._user_id() or "default", cash=body.get("cash"),
+                        expected_session=body.get("as_of"), expected_snapshot_id=body.get("portfolio_snapshot_id"),
+                    )
+                    return self._send(202, {"task": task.to_dict()})
+                if path == "/api/holdings-review/confirm":
+                    validate_schema(body, {
+                        "type": "object", "additionalProperties": False, "required": ["task_id", "unchanged"],
+                        "properties": {"task_id": {"type": "string"}, "unchanged": {"type": "boolean"}},
+                    })
+                    return self._send(200, holdings_review.confirm(
+                        runtime, body["task_id"], self._user_id() or "default", unchanged=body["unchanged"],
+                    ))
                 if path == "/api/candidate-scans":
                     allowed = {"as_of", "strategy_id", "strategy_version", "fixture"}
                     if set(body) - allowed or not isinstance(body.get("as_of"), str):
@@ -410,6 +435,8 @@ def serve(
                             "fixture": {"type": ["object", "null"]},
                         },
                     })
+                    if body.get("trigger_type") == holdings_review.TRIGGER:
+                        return self._send(400, {"error": "USE_HOLDINGS_REVIEW_ENDPOINT"})
                     user_id = self._user_id() or "default"
                     idempotency_key = self.headers.get("Idempotency-Key", "").strip()
                     request_hash = hashlib.sha256(
@@ -532,6 +559,7 @@ def serve(
                             "quantity": {"type": "number", "minimum": 0},
                             "avg_cost": {"type": "number", "minimum": 0},
                             "market_value": {"type": "number", "minimum": 0},
+                            "sector": {"type": "string", "maxLength": 80},
                         },
                     })
                     return self._send(201, {"portfolio": runtime.save_portfolio_position(

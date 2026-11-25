@@ -38,6 +38,14 @@ save a new version. Existing research keeps its original inputs and rules.
 
 ## 4. Run research
 
+For the desktop holdings pilot, open **收盘持仓复核** on the overview. It
+uses the latest compatible imported holdings, verified closing prices, and
+your personal position limits. Fill in account cash, including an explicit
+zero if applicable. If the holdings snapshot is older than the trading
+session, confirm that quantities and cash were unchanged or update the
+holdings first. See [the holdings review specification](DAILY_HOLDINGS_REVIEW.md)
+for coverage and retry behavior.
+
 The manual review shows the proposed close date. The runtime uses its configured
 close time and the cached trading calendar. The UI flags estimates when the
 calendar is missing. Fixture mode uses the demo date. The scheduler can also

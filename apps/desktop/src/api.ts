@@ -9,6 +9,7 @@ import type {
   OrderRequest,
   PaperOrderResponse,
   SchedulerResponse,
+  HoldingsReview,
 } from "../../../packages/contracts/generated/typescript/client";
 export type { SchedulerResponse };
 
@@ -48,6 +49,7 @@ export type TaskDetail = {
   task: Task;
   result_metadata?: ResultMetadata;
   llm_ledger?: { known_cost_usd: string; conservative_reserved_usd: string; unknown_count: number; day_boundary: string };
+  holdings_review?: HoldingsReview;
   decision: {
     status: string;
     confidence: string;
@@ -369,6 +371,10 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
       contractClient.importPortfolio(format, content, asOf) as Promise<{ portfolio: Record<string, unknown> }>,
     savePortfolioPosition: (payload: Parameters<typeof contractClient.savePortfolioPosition>[0]) =>
       contractClient.savePortfolioPosition(payload),
+    holdingsReview: () => contractClient.holdingsReview(),
+    startHoldingsReview: (payload?: Parameters<typeof contractClient.startHoldingsReview>[0]) =>
+      contractClient.startHoldingsReview(payload),
+    confirmHoldingsReview: (id: string, unchanged: boolean) => contractClient.confirmHoldingsReview(id, unchanged),
     createTask: (input: TaskInput) => {
       const target: Record<string, unknown> = {
         as_of: input.asOf,

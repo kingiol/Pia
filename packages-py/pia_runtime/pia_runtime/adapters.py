@@ -596,18 +596,15 @@ class AkshareMarketProvider:
         end = end_date[:10]
         current = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
-        verified_calendar = bool(dates)
-        if not dates:
-            dates = {
-                (current + timedelta(days=offset)).date().isoformat()
-                for offset in range((end_dt.date() - current.date()).days + 1)
-                if (current + timedelta(days=offset)).weekday() < 5
-            }
+        coverage_start = min(dates) if dates else None
+        coverage_end = max(dates) if dates else None
         rows = []
         while current <= end_dt:
+            trade_date = current.date().isoformat()
+            verified_calendar = bool(coverage_start and coverage_start <= trade_date <= coverage_end)
             rows.append({
-                "trade_date": current.date().isoformat(),
-                "is_open": current.date().isoformat() in dates,
+                "trade_date": trade_date,
+                "is_open": trade_date in dates if verified_calendar else current.weekday() < 5,
                 "quality": "verified" if verified_calendar else "partial",
                 "source_method": "exchange_calendar" if verified_calendar else "weekday_estimate",
             })

@@ -792,7 +792,7 @@ def _calendar_row(
         "provenance": row.get("provenance", {}),
         "as_of": as_of,
         "observed_at": observed_at,
-        "quality": "verified" if trade_date else "unavailable",
+        "quality": row.get("quality", "verified") if trade_date else "unavailable",
     }
     return _apply_temporal_quality(
         normalized,

@@ -63,6 +63,15 @@ class LocalMarketScheduler:
             return None
         user_ids = self._user_ids()
         settings = getattr(self.runtime, "settings", None)
+        start_holdings_review = getattr(self.runtime, "start_holdings_review", None)
+        if start_holdings_review and getattr(settings, "mode", "local") == "local":
+            for user_id in user_ids:
+                try:
+                    start_holdings_review(user_id, as_of=current_date, automatic=True)
+                except Exception as error:
+                    self.runtime.db.audit(None, "HOLDINGS_REVIEW_DISPATCH_FAILED", {
+                        "as_of": current_date, "error": type(error).__name__,
+                    }, user_id=user_id)
         sync_result: dict[str, Any] | None = None
         if getattr(settings, "data_provider", "fixture") != "fixture":
             try:

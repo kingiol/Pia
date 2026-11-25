@@ -72,6 +72,7 @@ Pia 文档导航。文档分为产品规格、当前实现说明、拟实施计�
 |---|---|
 | [Pilot User Guide](PILOT_USER_GUIDE.md) | 启动、研究、审批、回放和故障恢复操作 |
 | [Pilot Validation Plan](PILOT_VALIDATION_PLAN.md) | 试点对象、统一任务、指标和继续 / 调整门槛 |
+| [Daily Holdings Review](DAILY_HOLDINGS_REVIEW.md) | 收盘持仓复核范围、估值口径、交互和真实行情验收 |
 | [Pilot Retrospective Template](PILOT_RETROSPECTIVE_TEMPLATE.md) | 记录试点观察、问题、证据与后续决策 |
 
 ## 初始规划与历史输入

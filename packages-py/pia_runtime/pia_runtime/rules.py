@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,47 @@ from .models import RuleReason, RuleResult
 def load_rules(path: Path) -> dict[str, Any]:
     # The baseline file is JSON-compatible YAML so the runtime has no mandatory third-party dependency.
     return json.loads(path.read_text())
+
+
+def evaluate_holdings_limits(
+    positions: list[dict[str, Any]], nav: Decimal | None, rules: dict[str, Any],
+) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Decimal]] = {"stock": {}, "etf": {}, "sector": {}}
+    unknown_sector = False
+    symbol_sectors: dict[str, str] = {}
+    if nav is not None:
+        for position in positions:
+            values = groups[position["asset_type"]]
+            symbol = position["symbol"]
+            value = position["market_value"]
+            values[symbol] = values.get(symbol, Decimal(0)) + value
+            if position["asset_type"] == "stock":
+                sector = str(position.get("sector") or "").strip()
+                if sector.lower() in {"", "unknown", "未知", "未分类", "--"} or (
+                    symbol in symbol_sectors and sector != symbol_sectors[symbol]
+                ):
+                    unknown_sector = True
+                else:
+                    symbol_sectors[symbol] = sector
+                    sectors = groups["sector"]
+                    sectors[sector] = sectors.get(sector, Decimal(0)) + value
+
+    checks = []
+    for name, key in (("stock", "max_position_weight"), ("etf", "max_etf_weight"), ("sector", "max_sector_weight")):
+        limit = Decimal(str(rules[key]))
+        available = nav is not None and (name != "sector" or not unknown_sector)
+        rows = []
+        if available:
+            for label, market_value in groups[name].items():
+                rows.append({
+                    "label": label, "actual": float(market_value / nav), "breach": market_value > limit * nav,
+                })
+        checks.append({
+            "kind": name, "limit": float(limit), "items": rows,
+            "status": ("unavailable" if not available else
+                       "breach" if any(row["breach"] for row in rows) else "clear"),
+        })
+    return checks
 
 
 def evaluate_close_review(
