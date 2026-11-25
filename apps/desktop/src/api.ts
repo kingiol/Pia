@@ -225,6 +225,27 @@ export type TaskInput = {
   fixture?: { market?: string; portfolio?: string };
 };
 
+export type MarketAnomalies = {
+  as_of: string;
+  snapshot_id: string;
+  items: Array<{
+    symbol: string;
+    name: string | null;
+    change_pct: number | null;
+    volume_ratio: number | null;
+    price_triggered: boolean;
+    volume_triggered: boolean;
+    followed: boolean;
+  }>;
+};
+
+export type HistoricalAnomalyTask = {
+  task_id: string;
+  symbol: string | null;
+  status: string;
+  error: { code?: string; message?: string } | null;
+};
+
 export type MarketWorkspace = Record<string, unknown> & {
   snapshot_id?: string;
   as_of?: string;
@@ -235,6 +256,7 @@ export type MarketWorkspace = Record<string, unknown> & {
   instruments?: Array<{ symbol?: string; name?: string }>;
   review_session?: { as_of: string; calendar_verified: boolean };
   last_verified?: { as_of: string; observed_at: string; source: string };
+  price_volume_anomalies?: MarketAnomalies;
 };
 
 function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
@@ -408,6 +430,8 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
       quality?: string;
     }) => contractClient.saveMemory(payload),
     notificationDeliveries: (id: string) => contractClient.notificationDeliveries(id),
+    notificationAnomalies: (id: string) =>
+      contractClient.notificationAnomalies(id) as Promise<{ items: HistoricalAnomalyTask[] }>,
     registerDevice: (device: DeviceRegistration) =>
       contractClient.registerDevice(device),
     markNotificationRead: (id: string) =>

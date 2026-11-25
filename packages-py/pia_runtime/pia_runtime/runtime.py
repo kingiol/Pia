@@ -1069,6 +1069,7 @@ class PiaRuntime:
         frozen_binding: dict[str, Any] | None = None,
         frozen_pack: dict[str, Any] | None = None,
         preserve_execution_mode: bool = False,
+        require_portfolio: bool = False,
     ) -> Task:
         target = dict(target or {})
         fixture = fixture or {}
@@ -1084,6 +1085,10 @@ class PiaRuntime:
             parent_task_id=parent_task_id,
         )
         with self.db.transaction():
+            if require_portfolio:
+                self._portfolio_for_task(
+                    task, target.get("as_of", "2026-11-05"), fixture_name=fixture.get("portfolio"),
+                )
             self.db.user_seed(user_id)
             if frozen_binding:
                 binding_payload = deepcopy(frozen_binding["payload"])
@@ -1276,6 +1281,7 @@ class PiaRuntime:
             frozen_binding=binding,
             frozen_pack=self.db.get_context_pack(existing.id, user_id),
             preserve_execution_mode=True,
+            require_portfolio=(existing.error or {}).get("code") == PortfolioAsOfUnavailable.code,
         )
         self.db.audit(
             retry.id,
@@ -1515,12 +1521,14 @@ class PiaRuntime:
             }, user_id=user_id)
         return snapshot
 
-    def market_workspace(self, now: datetime | None = None) -> dict[str, Any]:
+    def market_workspace(self, now: datetime | None = None, *, user_id: str = "default") -> dict[str, Any]:
         latest = self.db.fetchone(
             """SELECT payload_json FROM market_snapshots
                ORDER BY as_of DESC, observed_at DESC, id DESC LIMIT 1"""
         )
         market = json.loads(latest["payload_json"]) if latest else {"status": "unavailable"}
+        if market.get("snapshot_id") and market.get("quality") in {"verified", "partial"}:
+            market["price_volume_anomalies"] = self.events.market_anomalies(market, user_id)
         if self.settings.data_provider == "fixture":
             return market
 

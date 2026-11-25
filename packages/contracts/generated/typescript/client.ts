@@ -562,6 +562,10 @@ export class PiaApiClient {
     return this.request(`/notifications/${encodeURIComponent(notificationId)}/deliveries`);
   }
 
+  notificationAnomalies(notificationId: string): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.request(`/notifications/${encodeURIComponent(notificationId)}/anomalies`);
+  }
+
   devices(): Promise<DeviceListResponse> {
     return this.request("/devices");
   }

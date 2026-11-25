@@ -16,6 +16,8 @@ from .models import Decision, Evidence, Task, TaskStatus, new_id, now_iso
 
 class Database:
     RETROSPECTIVE_HORIZONS = {"T+5", "T+20", "USER_RECORDED"}
+    LEGACY_ANOMALY_PREFIX = "price-volume-history-"
+    APPROVAL_NOTIFICATION_PREFIX = "task-approval-"
 
     def __init__(self, path: Path, migrations_dir: Path) -> None:
         self.path = path
@@ -1043,13 +1045,100 @@ class Database:
         )
         return notification
 
+    def save_price_volume_digest(self, data: dict[str, Any], user_id: str) -> None:
+        key = hashlib.sha256(f"{data['as_of']}:{user_id}".encode()).hexdigest()
+        items = data["items"]
+        reasons = [
+            label.format(count) for label, count in (
+                ("{} 个涨跌幅达阈值", sum(item["price_triggered"] for item in items)),
+                ("{} 个放量", sum(item["volume_triggered"] for item in items)),
+            ) if count
+        ]
+        self.execute(
+            """INSERT INTO notifications (id, user_id, event_type, title, body, created_at, data_json)
+               VALUES (?, ?, 'PriceVolumeDigest', ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET title=excluded.title, body=excluded.body, data_json=excluded.data_json""",
+            (f"price-volume-digest-{key}", user_id, f"你关注的 {len(items)} 个标的出现异动",
+             " · ".join(reasons), now_iso(), json.dumps(data, ensure_ascii=False)),
+        )
+
+    @staticmethod
+    def _notification_task_json(key: str) -> str:
+        return f"json_extract(t.target_json, '$.{key}')"
+
+    def _legacy_anomaly_query(self) -> str:
+        as_of = self._notification_task_json("as_of")
+        event_id = self._notification_task_json("_event_id")
+        return f"""SELECT n.id, n.task_id, n.created_at, n.read_at, {as_of} AS as_of,
+                          t.target_json, t.status, t.error_json
+                   FROM notifications n
+                   JOIN research_tasks t ON t.id=n.task_id AND t.user_id=n.user_id
+                   JOIN events e ON e.id={event_id} AND e.user_id=n.user_id
+                   WHERE n.user_id=? AND n.event_type='PriceVolumeAnomaly'
+                     AND substr(e.dedupe_key, length(n.user_id)+2, 13)='price-volume:'
+                     AND {as_of} IS NOT NULL"""
+
     def list_notifications(self, unread_only: bool = False, user_id: str = "default") -> list[dict[str, Any]]:
-        query = "SELECT * FROM notifications WHERE user_id=?"
-        params: tuple[Any, ...] = (user_id,)
-        if unread_only:
-            query += " AND read_at IS NULL"
-        query += " ORDER BY created_at DESC LIMIT 100"
-        return [dict(row) for row in self.fetchall(query, params)]
+        unread_filter = "WHERE read_at IS NULL" if unread_only else ""
+        rows = self.fetchall(
+            f"""WITH legacy AS ({self._legacy_anomaly_query()}), inbox AS (
+                   SELECT n.id, n.user_id, n.task_id, n.event_type, n.title, n.body,
+                          n.created_at, n.read_at, n.data_json, NULL AS as_of, NULL AS count
+                   FROM notifications n LEFT JOIN legacy ON legacy.id=n.id
+                   WHERE n.user_id=? AND legacy.id IS NULL
+                     AND substr(n.id, 1, length(?))<>?
+                   UNION ALL
+                   SELECT ? || as_of, ?, NULL, 'PriceVolumeHistory', '', '', MAX(created_at),
+                          CASE WHEN COUNT(read_at)=COUNT(*) THEN MAX(read_at) END, NULL, as_of, COUNT(*)
+                   FROM legacy GROUP BY as_of
+                   UNION ALL
+                   SELECT ? || t.id, t.user_id, t.id, 'TaskWaitingApproval',
+                          CASE WHEN t.trigger_type='MarketClose' THEN '收盘复盘等待确认'
+                               ELSE COALESCE({self._notification_task_json("symbol")} || ' 研究等待确认', '研究等待确认') END,
+                          '查看研究结论并提交你的决定。', COALESCE(t.started_at, t.created_at),
+                          n.read_at, NULL, NULL, NULL
+                   FROM research_tasks t
+                   LEFT JOIN notifications n ON n.id=? || t.id AND n.user_id=t.user_id
+                   WHERE t.user_id=? AND t.status='WAITING_APPROVAL'
+               )
+               SELECT * FROM inbox {unread_filter}
+               ORDER BY CASE WHEN event_type='TaskWaitingApproval' OR (read_at IS NULL AND event_type IN (
+                   'PortfolioRiskChanged', 'DataQualityDegraded', 'TaskFailed', 'EventDeliveryFailed'
+               )) THEN 0 ELSE 1 END, created_at DESC, id DESC LIMIT 100""",
+            (user_id, user_id, self.APPROVAL_NOTIFICATION_PREFIX, self.APPROVAL_NOTIFICATION_PREFIX,
+             self.LEGACY_ANOMALY_PREFIX, user_id, self.APPROVAL_NOTIFICATION_PREFIX,
+             self.APPROVAL_NOTIFICATION_PREFIX, user_id),
+        )
+        notifications = []
+        for row in rows:
+            notification = dict(row)
+            encoded = notification.pop("data_json")
+            count = notification.pop("count")
+            as_of = notification.pop("as_of")
+            if encoded:
+                notification["data"] = json.loads(encoded)
+            if count:
+                notification["title"] = f"{as_of} · {count} 条历史异动研究"
+                notification["body"] = "查看这批自动研究的状态和失败原因。"
+                notification["data"] = {"as_of": as_of, "count": count}
+            notifications.append(notification)
+        return notifications
+
+    def legacy_anomaly_notifications(self, notification_id: str, user_id: str) -> list[dict[str, Any]]:
+        if not notification_id.startswith(self.LEGACY_ANOMALY_PREFIX):
+            raise KeyError(notification_id)
+        rows = self.fetchall(
+            f"""SELECT * FROM ({self._legacy_anomaly_query()}) legacy
+                WHERE as_of=? ORDER BY created_at DESC, id DESC""",
+            (user_id, notification_id.removeprefix(self.LEGACY_ANOMALY_PREFIX)),
+        )
+        if not rows:
+            raise KeyError(notification_id)
+        return [
+            {"task_id": row["task_id"], "symbol": json.loads(row["target_json"]).get("symbol"),
+             "status": row["status"], "error": json.loads(row["error_json"]) if row["error_json"] else None}
+            for row in rows
+        ]
 
     def record_notification_delivery(
         self,
@@ -1257,6 +1346,27 @@ class Database:
         }
 
     def mark_notification_read(self, notification_id: str, user_id: str = "default") -> None:
+        if notification_id.startswith(self.APPROVAL_NOTIFICATION_PREFIX):
+            now = now_iso()
+            cursor = self.execute(
+                """INSERT INTO notifications (id, user_id, task_id, event_type, title, body, created_at, read_at)
+                   SELECT ?, user_id, id, 'TaskWaitingApproval', '', '', ?, ?
+                   FROM research_tasks WHERE id=? AND user_id=? AND status='WAITING_APPROVAL'
+                   ON CONFLICT(id) DO UPDATE SET read_at=COALESCE(notifications.read_at, excluded.read_at)""",
+                (notification_id, now, now, notification_id.removeprefix(self.APPROVAL_NOTIFICATION_PREFIX), user_id),
+            )
+            if not cursor.rowcount:
+                raise KeyError(notification_id)
+            return
+        if notification_id.startswith(self.LEGACY_ANOMALY_PREFIX):
+            cursor = self.execute(
+                f"""UPDATE notifications SET read_at=COALESCE(read_at, ?)
+                    WHERE id IN (SELECT id FROM ({self._legacy_anomaly_query()}) legacy WHERE as_of=?)""",
+                (now_iso(), user_id, notification_id.removeprefix(self.LEGACY_ANOMALY_PREFIX)),
+            )
+            if not cursor.rowcount:
+                raise KeyError(notification_id)
+            return
         cursor = self.execute(
             "UPDATE notifications SET read_at=? WHERE id=? AND user_id=?",
             (now_iso(), notification_id, user_id),

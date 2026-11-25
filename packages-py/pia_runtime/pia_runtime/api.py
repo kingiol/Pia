@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .runtime import PiaRuntime
+from .runtime import PiaRuntime, PortfolioAsOfUnavailable
 from .market_sync import MARKET_SYNC_STAGES
 from .schema import SchemaValidationError, validate_named, validate_schema
 from .security import redact_secrets
@@ -240,7 +240,7 @@ def serve(
                         snapshot = runtime.db.get_latest_portfolio_snapshot(user_id)
                     return self._send(200, snapshot or {"status": "unavailable"})
                 if path == "/api/market":
-                    return self._send(200, runtime.market_workspace())
+                    return self._send(200, runtime.market_workspace(user_id=self._user_id() or "default"))
                 if path == "/api/candidates":
                     query = parse_qs(urlparse(self.path).query)
                     return self._send(200, runtime.scan_candidates(
@@ -268,6 +268,9 @@ def serve(
                             self._user_id() or "default",
                         ),
                     })
+                if path.startswith("/api/notifications/") and path.endswith("/anomalies"):
+                    items = runtime.db.legacy_anomaly_notifications(path.split("/")[3], self._user_id() or "default")
+                    return self._send(200, {"items": items})
                 if path.startswith("/api/notifications/") and path.endswith("/deliveries"):
                     notification_id = path.split("/")[3]
                     user_id = self._user_id() or "default"
@@ -456,11 +459,13 @@ def serve(
                         )
                         if existing:
                             return self._send(200, existing)
+                    trigger_type = body.get("trigger_type", "MarketClose")
                     task = runtime.create_task(
-                        body.get("trigger_type", "MarketClose"),
+                        trigger_type,
                         body.get("target", {}),
                         body.get("fixture"),
                         user_id=user_id,
+                        require_portfolio=trigger_type in {"StockResearch", "MarketClose"},
                     )
                     response = {"task": task.to_dict()}
                     if idempotency_key:
@@ -807,6 +812,8 @@ def serve(
                 return self._send(404, {"error": "not_found", "detail": redact_secrets(str(error))})
             except SchemaValidationError as error:
                 return self._send(400, {"error": "invalid_request", "detail": redact_secrets(str(error))})
+            except PortfolioAsOfUnavailable as error:
+                return self._send(409, {"error": error.code, "detail": redact_secrets(str(error))})
             except ValueError as error:
                 return self._send(409, {"error": "conflict", "detail": redact_secrets(str(error))})
             except Exception as error:
