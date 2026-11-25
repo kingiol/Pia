@@ -402,6 +402,10 @@ class DecisionJournal:
             detail = self.db.get_task_detail(task.id, user_id)
             if not detail:
                 continue
+            if task.trigger_type == "DailyHoldingsReview" and not any(
+                event["event_type"] == "HOLDINGS_REVIEW_CONFIRMED" for event in detail["events"]
+            ):
+                continue
             decision = detail.get("decision")
             if not decision:
                 continue
