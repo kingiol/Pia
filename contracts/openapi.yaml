@@ -541,6 +541,8 @@ paths:
                       as_of: {type: string, format: date}
                       observed_at: {type: string, format: date-time}
                       source: {type: string}
+                  price_volume_anomalies:
+                    $ref: "#/components/schemas/MarketAnomalies"
   /api/audit:
     get:
       responses:
@@ -663,6 +665,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskResponse"
+        "409":
+          description: Research requires a portfolio snapshot on or before the requested date (PORTFOLIO_AS_OF_UNAVAILABLE).
   /api/tasks/{task_id}:
     get:
       parameters:
@@ -1061,11 +1065,35 @@ paths:
           schema: {type: string, enum: ["0", "1"]}
       responses:
         "200":
-          description: In-app notifications
+          description: In-app notifications with pending approvals, daily anomaly digests, and grouped historical anomaly tasks.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationListResponse"
+  /api/notifications/{notification_id}/anomalies:
+    get:
+      parameters:
+        - {name: notification_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Original research tasks in a historical anomaly notification group
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [task_id, symbol, status, error]
+                      properties:
+                        task_id: {type: string}
+                        symbol: {type: ["string", "null"]}
+                        status: {type: string}
+                        error: {type: ["object", "null"], additionalProperties: true}
+        "404": {description: Notification group not visible to the current user}
   /api/notifications/{notification_id}/read:
     post:
       parameters:
@@ -1848,6 +1876,25 @@ components:
             type: object
             additionalProperties: true
       additionalProperties: true
+    MarketAnomalies:
+      type: object
+      required: [as_of, snapshot_id, items]
+      properties:
+        as_of: {type: string, format: date}
+        snapshot_id: {type: string}
+        items:
+          type: array
+          items:
+            type: object
+            required: [symbol, name, change_pct, volume_ratio, price_triggered, volume_triggered, followed]
+            properties:
+              symbol: {type: string}
+              name: {type: ["string", "null"]}
+              change_pct: {type: ["number", "null"]}
+              volume_ratio: {type: ["number", "null"]}
+              price_triggered: {type: boolean}
+              volume_triggered: {type: boolean}
+              followed: {type: boolean}
     NotificationListResponse:
       type: object
       required: [notifications]
@@ -1857,6 +1904,15 @@ components:
           items:
             type: object
             additionalProperties: true
+            properties:
+              data:
+                oneOf:
+                  - $ref: "#/components/schemas/MarketAnomalies"
+                  - type: object
+                    required: [as_of, count]
+                    properties:
+                      as_of: {type: string, format: date}
+                      count: {type: integer}
       additionalProperties: false
     NotificationDeliveryListResponse:
       type: object

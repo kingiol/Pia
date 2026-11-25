@@ -5,6 +5,7 @@ import weakref
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from .adapters import _canonical_symbol, _float
 from .models import new_id, now_iso
 
 
@@ -171,38 +172,11 @@ class EventEngine:
                     user_id=user_id,
                 ))
 
-        anomaly_threshold = float(getattr(
-            self.runtime.settings,
-            "price_volume_anomaly_pct",
-            5.0,
-        ))
-        for instrument in snapshot.get("instruments", []):
-            try:
-                change_pct = float(instrument.get("change_pct") or 0)
-            except (TypeError, ValueError):
-                change_pct = 0.0
-            try:
-                volume_ratio = float(instrument.get("volume_ratio") or 0)
-            except (TypeError, ValueError):
-                volume_ratio = 0.0
-            if abs(change_pct) < anomaly_threshold and volume_ratio < 2.0:
-                continue
-            symbol = str(instrument.get("symbol") or "unknown")
-            derived.append(self.ingest(
-                "PriceVolumeAnomaly",
-                {
-                    **common,
-                    "symbol": symbol,
-                    "change_pct": change_pct,
-                    "volume_ratio": volume_ratio or None,
-                    "instrument": instrument,
-                },
-                dedupe_key=self._scoped_dedupe_key(
-                    f"price-volume:{snapshot_id}:{symbol}",
-                    user_id,
-                ),
-                user_id=user_id,
-            ))
+        if market_quality == "verified":
+            anomalies = self.market_anomalies({**snapshot, "as_of": as_of}, user_id)
+            items = [item for item in anomalies["items"] if item["followed"]]
+            if items:
+                self.db.save_price_volume_digest({**anomalies, "items": items}, user_id)
 
         for source in sync_result.get("research_sources", []):
             if str(source.get("source_type")) != "filing":
@@ -229,6 +203,41 @@ class EventEngine:
                 user_id=user_id,
             ))
         return derived
+
+    def market_anomalies(self, snapshot: dict[str, Any], user_id: str) -> dict[str, Any]:
+        as_of = snapshot["as_of"]
+        portfolio = self.db.get_latest_portfolio_snapshot(user_id, as_of=as_of, include_fixture=False)
+        followed = {
+            _canonical_symbol(symbol)
+            for watchlist in self.db.list_watchlists(user_id)
+            for symbol in watchlist["symbols"]
+        } | {
+            _canonical_symbol(position["symbol"])
+            for position in (portfolio or {}).get("positions", [])
+            if position.get("symbol")
+        }
+        threshold = self.runtime.settings.price_volume_anomaly_pct
+        items = {}
+        for instrument in snapshot.get("instruments", []):
+            if not instrument.get("symbol"):
+                continue
+            change_pct = _float(instrument.get("change_pct"))
+            volume_ratio = _float(instrument.get("volume_ratio"))
+            price_triggered = change_pct is not None and abs(change_pct) >= threshold
+            volume_triggered = volume_ratio is not None and volume_ratio >= 2
+            if price_triggered or volume_triggered:
+                symbol = _canonical_symbol(instrument["symbol"])
+                items[symbol] = {
+                    "symbol": symbol, "name": instrument.get("name"), "change_pct": change_pct,
+                    "volume_ratio": volume_ratio, "price_triggered": price_triggered,
+                    "volume_triggered": volume_triggered, "followed": symbol in followed,
+                }
+        return {
+            "as_of": as_of, "snapshot_id": snapshot["snapshot_id"],
+            "items": sorted(items.values(), key=lambda row: (
+                -abs(row["change_pct"] or 0), -(row["volume_ratio"] or 0), row["symbol"],
+            )),
+        }
 
     @staticmethod
     def _scoped_dedupe_key(base: str, user_id: str) -> str:
@@ -453,7 +462,9 @@ class EventEngine:
         )
         if not delivery:
             return
-        if task.status.value in {"FAILED", "RETRYABLE", "TIMEOUT"}:
+        if (task.error or {}).get("code") == "PORTFOLIO_AS_OF_UNAVAILABLE":
+            self._fail_portfolio_delivery(event_id, delivery["id"], str(task.error))
+        elif task.status.value in {"FAILED", "RETRYABLE", "TIMEOUT"}:
             self.schedule_retry(event_id, str(task.error or task.status.value))
         else:
             self.db.execute(
@@ -461,6 +472,15 @@ class EventEngine:
                 (delivery["id"],),
             )
             self.db.execute("UPDATE events SET status='COMPLETED' WHERE id=?", (event_id,))
+
+    def _fail_portfolio_delivery(self, event_id: str, delivery_id: str, error: str) -> None:
+        with self.db.transaction():
+            self.db.execute(
+                """UPDATE event_deliveries SET status='FAILED', last_error=?, next_retry_at=NULL
+                   WHERE id=?""",
+                (error, delivery_id),
+            )
+            self.db.execute("UPDATE events SET status='FAILED' WHERE id=?", (event_id,))
 
     def schedule_retry(self, event_id: str, error: str, max_attempts: int = 3) -> dict[str, Any]:
         delivery = self.db.fetchone(
@@ -515,7 +535,7 @@ class EventEngine:
     def retry_due_events(self) -> int:
         now = datetime.now(timezone.utc).isoformat()
         rows = self.db.fetchall(
-            """SELECT e.*, d.attempt
+            """SELECT e.*, d.attempt, d.id AS delivery_id, d.last_error, d.task_id
                FROM events e
                JOIN event_deliveries d ON d.event_id=e.id
                WHERE e.status='RETRY_SCHEDULED'
@@ -526,12 +546,11 @@ class EventEngine:
         )
         dispatched = 0
         for row in rows:
+            if "PORTFOLIO_AS_OF_UNAVAILABLE" in (row["last_error"] or ""):
+                self._fail_portfolio_delivery(row["id"], row["delivery_id"], row["last_error"])
+                continue
             payload = json.loads(row["payload_json"])
-            delivery = self.db.fetchone(
-                "SELECT task_id FROM event_deliveries WHERE event_id=? ORDER BY attempt DESC LIMIT 1",
-                (row["id"],),
-            )
-            previous_task = self.db.get_task(delivery["task_id"]) if delivery else None
+            previous_task = self.db.get_task(row["task_id"])
             row_user_id = row["user_id"] if "user_id" in row.keys() else None
             user_id = str(row_user_id or (
                 previous_task.user_id if previous_task else "default"
