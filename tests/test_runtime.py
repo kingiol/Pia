@@ -1255,7 +1255,7 @@ class RuntimeTest(unittest.TestCase):
                 self.provider = provider
                 self.call_provider = call_provider
 
-            def sync_market_data(self, as_of, symbols):
+            def sync_market_data(self, as_of, symbols, **kwargs):
                 provider, snapshot = self.call_provider("market_snapshot", "get_market_snapshot", as_of)
                 quality = snapshot["quality"]
                 return {

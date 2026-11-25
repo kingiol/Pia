@@ -13,6 +13,10 @@ from .models import now_iso
 class PostgresDatabase(Database):
     """PostgreSQL transactional repository with the same surface as Database."""
 
+    @staticmethod
+    def _notification_task_json(key: str) -> str:
+        return f"(CAST(t.target_json AS jsonb)->>'{key}')"
+
     def __init__(self, dsn: str, migrations_dir: Path) -> None:
         try:
             import psycopg  # type: ignore

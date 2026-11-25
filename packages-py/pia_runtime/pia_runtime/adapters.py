@@ -558,27 +558,39 @@ class AkshareMarketProvider:
     def get_daily_bars(self, symbol: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
         self._require_sdk()
         code = symbol.split(".")[0]
-        if _board_for_symbol(symbol) == "etf":
+        is_etf = _board_for_symbol(symbol) == "etf"
+        if is_etf:
             method = getattr(self.sdk, "fund_etf_hist_em", None)
         else:
             method = self._stock_history_endpoint()
         if method is None:
             raise RuntimeError(f"CAPABILITY_DISABLED: AKShare historical endpoint unavailable for {symbol}")
-        frame = method(
-            symbol=code,
-            period="daily",
-            start_date=start_date.replace("-", ""),
-            end_date=end_date.replace("-", ""),
-            adjust="",
-        )
-        rows = _records(frame)
+        start = start_date.replace("-", "")
+        end = end_date.replace("-", "")
+        source_method = "eastmoney_daily"
+        try:
+            rows = _records(method(symbol=code, period="daily", start_date=start, end_date=end, adjust=""))
+        except Exception as error:
+            fallback = getattr(self.sdk, "fund_etf_hist_sina" if is_etf else "stock_zh_a_daily", None)
+            if type(error).__name__ != "Push2RateLimitError" or fallback is None:
+                raise
+            prefix = {"SSE": "sh", "SZSE": "sz", "BSE": "bj"}[_exchange_for_symbol(_canonical_symbol(symbol))]
+            options = {} if is_etf else {"start_date": start, "end_date": end, "adjust": ""}
+            rows = [
+                row for row in _records(fallback(symbol=f"{prefix}{code}", **options))
+                if (day := _date_from_row(row)) and start_date <= day <= end_date
+            ]
+            source_method = "sina_daily"
         for row in rows:
             row.setdefault("symbol", symbol)
-        return normalize_daily_bars(
+        bars = normalize_daily_bars(
             rows,
             provider_id=self.provider_id,
             provider_version=getattr(self.sdk, "__version__", "unknown"),
         )
+        for bar in bars:
+            bar["source_method"] = source_method
+        return bars
 
     def get_trading_calendar(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
         self._require_sdk()
@@ -620,14 +632,23 @@ class AkshareMarketProvider:
         ):
             return self._get_historical_market_snapshot(as_of)
         observed_at = datetime.now(timezone.utc).isoformat()
-        spot = self.sdk.stock_zh_a_spot_em()
-        records = _records(spot)
+        source_method = "eastmoney_spot"
+        try:
+            records = _records(self.sdk.stock_zh_a_spot_em())
+        except Exception as error:
+            fallback = getattr(self.sdk, "stock_zh_a_spot", None)
+            if type(error).__name__ != "Push2RateLimitError" or fallback is None:
+                raise
+            records = _records(fallback())
+            if not records:
+                raise
+            source_method = "sina_spot"
         listing_metadata = self._get_listing_metadata()
         etf_listing_metadata = self._get_etf_listing_metadata()
         instruments = []
         advances = declines = unchanged = 0
         for row in records:
-            symbol = str(row.get("代码") or row.get("证券代码") or "").strip()
+            symbol = str(row.get("代码") or row.get("证券代码") or "").strip()[-6:]
             name = str(row.get("名称") or row.get("股票简称") or symbol)
             change = _float(row.get("涨跌幅"))
             if change is None:
@@ -663,10 +684,9 @@ class AkshareMarketProvider:
         # ETFs are part of the configured MVP universe. Keep them in the
         # snapshot so candidate scans do not silently omit them. They are
         # intentionally excluded from stock market breadth calculations.
-        etf_spot = getattr(self.sdk, "fund_etf_spot_em", None)
-        if etf_spot:
+        if etf_spot := self._etf_spot_rows():
             try:
-                for row in _records(etf_spot()):
+                for row in etf_spot:
                     symbol = str(row.get("代码") or row.get("证券代码") or "").strip()
                     if not symbol:
                         continue
@@ -721,6 +741,7 @@ class AkshareMarketProvider:
             "as_of": as_of,
             "observed_at": observed_at,
             "source": self.provider_id,
+            "source_method": source_method,
             "provider_version": getattr(self.sdk, "__version__", "unknown"),
             "adapter_version": "0.2.0",
             "quality": quality if instruments else "unavailable",
@@ -1309,10 +1330,9 @@ class AkshareMarketProvider:
             }
 
         etf_listing_metadata = self._get_etf_listing_metadata()
-        etf_spot = getattr(self.sdk, "fund_etf_spot_em", None)
-        if etf_spot:
+        if etf_spot := self._etf_spot_rows():
             try:
-                for row in _records(etf_spot()):
+                for row in etf_spot:
                     code = str(row.get("代码") or row.get("证券代码") or "").strip()
                     if not code:
                         continue
@@ -1347,6 +1367,17 @@ class AkshareMarketProvider:
                 pass
         self._universe_cache = [dict(row) for row in result.values()]
         return [dict(row) for row in self._universe_cache]
+
+    def _etf_spot_rows(self) -> list[dict[str, Any]]:
+        for name in ("fund_etf_spot_em", "fund_etf_category_sina"):
+            method = getattr(self.sdk, name, None)
+            if method:
+                try:
+                    if rows := _records(method()):
+                        return rows
+                except Exception:
+                    continue
+        return []
 
     def _get_etf_listing_metadata(self) -> dict[str, dict[str, str | None]]:
         """Load ETF listing dates from exchange-maintained product lists."""
@@ -1593,10 +1624,13 @@ class AkshareMarketProvider:
         try:
             rows = _records(self.sdk.stock_board_industry_name_em())
         except Exception:
-            return []
+            try:
+                rows = _records(self.sdk.stock_sector_spot(indicator="行业"))
+            except Exception:
+                return []
         return [
             {
-                "name": str(row.get("板块名称") or row.get("名称") or "unknown"),
+                "name": str(row.get("板块名称") or row.get("板块") or row.get("名称") or "unknown"),
                 "change_pct": _float(row.get("涨跌幅")) or 0.0,
                 "breadth": 0.5,
             }
@@ -1605,16 +1639,27 @@ class AkshareMarketProvider:
 
     def _get_indices(self) -> list[dict[str, Any]]:
         method = getattr(self.sdk, "stock_zh_index_spot_em", None)
-        if not method:
-            return []
-        try:
-            frame = method(symbol="沪深重要指数")
-        except TypeError:
-            frame = method()
-        except Exception:
-            return []
+        rows = []
+        if method:
+            try:
+                try:
+                    rows = _records(method(symbol="沪深重要指数"))
+                except TypeError:
+                    rows = _records(method())
+            except Exception:
+                pass
+        if not rows:
+            try:
+                important = {"sh000001", "sz399001", "sz399006", "sh000300", "sh000688"}
+                rows = [
+                    {**row, "代码": row["代码"][2:]}
+                    for row in _records(self.sdk.stock_zh_index_spot_sina())
+                    if row.get("代码") in important
+                ]
+            except Exception:
+                return []
         indices = []
-        for row in _records(frame):
+        for row in rows:
             code = str(row.get("代码") or row.get("指数代码") or "").strip()
             close = _float(row.get("最新价") or row.get("收盘") or row.get("最新"))
             change = _float(row.get("涨跌幅") or row.get("涨跌"))

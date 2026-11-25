@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 from pathlib import Path
+from inspect import signature
 
 from pia_runtime.adapters import ProviderHealth
 from pia_runtime.analytics import AnalyticsStore
@@ -151,6 +152,85 @@ class _Provider:
 
 
 class DataWorkerTest(unittest.TestCase):
+    def test_market_only_sync_reports_progress_and_keeps_universe_when_snapshot_fails(self):
+        provider = _Provider()
+        provider.get_market_snapshot = Mock(side_effect=ConnectionError("upstream unavailable"))
+        provider.get_daily_bars = Mock(wraps=provider.get_daily_bars)
+        progress = []
+        with tempfile.TemporaryDirectory() as directory:
+            store = AnalyticsStore(Path(directory) / "analytics.duckdb")
+            result = DataWorker(provider, store).sync_market_data(
+                "2026-11-06", [], include_default_symbols=False, on_progress=progress.append,
+            )
+
+        provider.get_daily_bars.assert_not_called()
+        self.assertEqual(result["requested_symbols"], [])
+        self.assertEqual(result["quality"], "partial")
+        self.assertEqual(result["counts"]["market_snapshot"], 0)
+        self.assertEqual(result["counts"]["universe"], 5)
+        self.assertEqual([failure["kind"] for failure in result["failures"]], ["market_snapshot"])
+        self.assertEqual([update["stage"] for update in progress if update["status"] == "running" and not update["fetched"] and not update["failed"]], [
+            "market_snapshot", "trading_calendar", "universe",
+        ])
+        self.assertEqual([step["status"] for step in result["stages"]], [
+            "failed", "done", "done", "skipped", "skipped", "skipped", "skipped",
+        ])
+
+    def test_sync_reports_the_symbol_it_is_requesting(self):
+        provider = _Provider()
+        progress = []
+
+        def call_provider(capability, method_name, *args, **kwargs):
+            method = getattr(provider, method_name)
+            if "as_of" not in signature(method).parameters:
+                kwargs.pop("as_of", None)
+            return provider, method(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = AnalyticsStore(Path(directory) / "analytics.duckdb")
+            result = DataWorker(provider, store, call_provider=call_provider).sync_market_data(
+                "2026-11-06", ["600000.SH", "300001.SZ"], on_progress=progress.append,
+            )
+        self.assertFalse(result["failures"])
+        self.assertTrue(any(row["source_type"] == "filing" for row in result["research_sources"]))
+        daily = [update for update in progress if update["stage"] == "daily_bars"]
+        self.assertEqual([(step.get("symbol"), step["fetched"]) for step in daily], [
+            (None, 0), ("600000.SH", 0), ("600000.SH", 1), ("300001.SZ", 1), ("300001.SZ", 2), (None, 2),
+        ])
+        self.assertEqual(daily[-1]["status"], "done")
+
+    def test_resume_after_restart_only_fetches_missing_symbols_and_can_refresh_one_stage(self):
+        provider = _Provider()
+        get_bars = provider.get_daily_bars
+        symbols = ["600000.SH", "300001.SZ"]
+        provider.get_daily_bars = Mock(side_effect=[
+            get_bars(symbols[0], "2026-11-06", "2026-11-06"), ConnectionError(),
+        ])
+        provider.get_market_snapshot = Mock(wraps=provider.get_market_snapshot)
+        provider.search_filings = Mock(return_value=[])
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "analytics.duckdb"
+            first = DataWorker(provider, AnalyticsStore(path)).sync_market_data("2026-11-06", symbols)
+            self.assertEqual(first["stages"][3]["status"], "partial")
+            provider.get_daily_bars = Mock(wraps=get_bars)
+            worker = DataWorker(provider, AnalyticsStore(path))
+            resumed = worker.sync_market_data("2026-11-06", symbols)
+            provider.get_daily_bars.assert_called_once_with(symbols[1], "2026-11-06", "2026-11-06")
+            self.assertEqual(resumed["stages"][3] | {}, {
+                "stage": "daily_bars", "status": "done", "total": 2,
+                "fetched": 1, "reused": 1, "failed": 0, "saved_rows": 1, "symbol": None,
+            })
+            self.assertEqual(resumed["stages"][6]["status"], "reused")
+            self.assertEqual(provider.search_filings.call_count, 2)
+
+            refresh = worker.sync_market_data("2026-11-06", symbols, refresh_stage="filing")
+            self.assertEqual(refresh["stages"][6]["status"], "done")
+            self.assertEqual(refresh["stages"][3]["status"], "reused")
+            self.assertEqual(refresh["counts"]["market_snapshot"], 0)
+            self.assertEqual(provider.search_filings.call_count, 4)
+            self.assertEqual(provider.get_market_snapshot.call_count, 1)
+
     def test_raw_batches_preserve_actual_mixed_provider_attribution(self):
         analytics = Mock()
         worker = DataWorker(_Provider(), analytics)

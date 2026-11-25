@@ -5,6 +5,7 @@ import type { DeviceRegistration } from "../../../packages/contracts/generated/t
 import type { ResultMetadata } from "../../../packages/contracts/generated/typescript/models";
 import type {
   MemoryCandidate,
+  DataSyncResponse,
   OrderPreviewResponse,
   OrderRequest,
   PaperOrderResponse,
@@ -12,6 +13,23 @@ import type {
   HoldingsReview,
 } from "../../../packages/contracts/generated/typescript/client";
 export type { SchedulerResponse };
+
+export const marketSyncStages = [
+  "market_snapshot", "trading_calendar", "universe", "daily_bars", "fundamentals", "news", "filing",
+] as const;
+export type MarketSyncStage = (typeof marketSyncStages)[number];
+export type MarketSyncProgress = {
+  stage: string;
+  status?: "running" | "validating" | "done" | "reused" | "partial" | "failed" | "skipped";
+  symbol?: string | null;
+  current?: number;
+  total?: number;
+  fetched?: number;
+  reused?: number;
+  failed?: number;
+  saved_rows?: number;
+  reason?: string;
+};
 
 export type TaskStatus =
   | "QUEUED"
@@ -209,6 +227,27 @@ export type TaskInput = {
   fixture?: { market?: string; portfolio?: string };
 };
 
+export type MarketAnomalies = {
+  as_of: string;
+  snapshot_id: string;
+  items: Array<{
+    symbol: string;
+    name: string | null;
+    change_pct: number | null;
+    volume_ratio: number | null;
+    price_triggered: boolean;
+    volume_triggered: boolean;
+    followed: boolean;
+  }>;
+};
+
+export type HistoricalAnomalyTask = {
+  task_id: string;
+  symbol: string | null;
+  status: string;
+  error: { code?: string; message?: string } | null;
+};
+
 export type MarketWorkspace = Record<string, unknown> & {
   snapshot_id?: string;
   as_of?: string;
@@ -219,6 +258,7 @@ export type MarketWorkspace = Record<string, unknown> & {
   instruments?: Array<{ symbol?: string; name?: string }>;
   review_session?: { as_of: string; calendar_verified: boolean };
   last_verified?: { as_of: string; observed_at: string; source: string };
+  price_volume_anomalies?: MarketAnomalies;
 };
 
 function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
@@ -238,15 +278,12 @@ function normalizeTaskDetail(value: Partial<TaskDetail>): TaskDetail {
 
 export function createWorkspaceApi(url: string, token?: string, signal?: AbortSignal) {
   const baseUrl = url.replace(/\/$/, "");
-  const contractClient = new PiaApiClient({
-    baseUrl,
-    token,
-    fetcher: async (input, init) => {
-      if (!baseUrl) throw new Error("桌面运行时尚未连接。");
-      signal?.throwIfAborted();
-      return fetch(input, signal ? { ...init, signal } : init);
-    },
-  });
+  const fetcher: typeof fetch = async (input, init) => {
+    if (!baseUrl) throw new Error("桌面运行时尚未连接。");
+    signal?.throwIfAborted();
+    return fetch(input, signal ? { ...init, signal } : init);
+  };
+  const contractClient = new PiaApiClient({ baseUrl, token, fetcher });
 
   return {
     setToken: (token?: string) => contractClient.setToken(token),
@@ -266,8 +303,47 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
     }>,
     providers: () => contractClient.providers(),
     scheduler: () => contractClient.scheduler(),
-    syncData: (asOf: string, symbols: string[] = []) =>
-      contractClient.syncData(asOf, symbols),
+    syncData: async (
+      asOf: string, symbols: string[], onProgress: (progress: MarketSyncProgress) => void,
+      refreshStage?: MarketSyncStage,
+    ): Promise<DataSyncResponse> => {
+      const token = contractClient.getToken();
+      const response = await fetcher(`${baseUrl}/data/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/x-ndjson",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          as_of: asOf, symbols, include_default_symbols: false, refresh_stage: refreshStage,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      if (!response.headers.get("Content-Type")?.includes("application/x-ndjson")) return response.json();
+      if (!response.body) throw new Error("未收到同步结果。");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) throw new Error("同步连接中断，请刷新行情状态后重试。");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const frame = JSON.parse(line) as { progress?: MarketSyncProgress; result?: DataSyncResponse; error?: string };
+            if (frame.error) throw new Error(line);
+            if (frame.result) return frame.result;
+            if (frame.progress) onProgress(frame.progress);
+          }
+        }
+      } finally {
+        await reader.cancel().catch(() => undefined);
+      }
+    },
     previewOrder: (order: OrderRequest) =>
       contractClient.previewOrder(order) as Promise<OrderPreviewResponse>,
     paperOrder: (order: OrderRequest) =>
@@ -356,6 +432,8 @@ export function createWorkspaceApi(url: string, token?: string, signal?: AbortSi
       quality?: string;
     }) => contractClient.saveMemory(payload),
     notificationDeliveries: (id: string) => contractClient.notificationDeliveries(id),
+    notificationAnomalies: (id: string) =>
+      contractClient.notificationAnomalies(id) as Promise<{ items: HistoricalAnomalyTask[] }>,
     registerDevice: (device: DeviceRegistration) =>
       contractClient.registerDevice(device),
     markNotificationRead: (id: string) =>

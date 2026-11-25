@@ -27,9 +27,9 @@ import {
   XIcon,
   type Icon,
 } from "@phosphor-icons/react";
-import { useWorkspaceApi, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
+import { useWorkspaceApi, marketSyncStages, Evidence, JournalItem, JournalPatterns, JournalSummary, RuleResult, Task, TaskDataResponse, TaskDetail, TaskInput, TaskStatus, TraceRow, Watchlist } from "./api";
 import { HoldingsReviewCard, HoldingsReviewResult } from "./components/HoldingsReview";
-import type { CandidateListResponse, LocalCredentialStatus, MarketWorkspace, Retrospective, RuleReason, SchedulerResponse, WorkspaceHealth } from "./api";
+import type { CandidateListResponse, HistoricalAnomalyTask, LocalCredentialStatus, MarketAnomalies, MarketSyncProgress, MarketSyncStage, MarketWorkspace, Retrospective, RuleReason, SchedulerResponse, WorkspaceHealth } from "./api";
 import { registerWebPushDevice } from "./push";
 import { RunFlow } from "./components/RunFlow";
 import { WorkspaceSearch } from "./components/WorkspaceSearch";
@@ -59,7 +59,7 @@ const pageResources = {
   Market: ["market", "watchlists"],
   Watchlist: ["watchlists", "tasks", "market"],
   Portfolio: ["portfolio"],
-  Research: ["tasks", "market"],
+  Research: ["tasks", "market", "notifications"],
   Journal: ["journal", "journalSummary", "journalPatterns"],
   Profile: ["profile"],
   Rules: ["rules"],
@@ -70,6 +70,7 @@ const pageResources = {
 
 type Resource = (typeof pageResources)[WorkspaceView][number];
 type ResourceStatus = { error?: string };
+type ActiveMarketSync = { asOf: string; startedAt: number };
 type CommitResource = <T>(value: T, apply: (value: T) => void) => void;
 type RetrospectiveInput = Pick<Retrospective, "action_taken" | "outcome"> & {
   notes?: string;
@@ -142,6 +143,15 @@ function friendlyError(error: unknown, fallback: string) {
   if (/^(?:request failed:\s*)?(?:unauthorized|401)$/i.test(raw)) return "云端工作区需要重新连接，请输入访问令牌。";
   if (!/\p{Script=Han}/u.test(raw)) return fallback;
   return raw.length > 220 ? `${raw.slice(0, 217)}…` : raw;
+}
+
+function missingPortfolio(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  try {
+    return JSON.parse(error.message)?.error === "PORTFOLIO_AS_OF_UNAVAILABLE";
+  } catch {
+    return false;
+  }
 }
 
 const DEFAULT_INVESTMENT_OBJECTIVE = "capital preservation with disciplined growth";
@@ -364,7 +374,10 @@ export function App({
   const [journalSummary, setJournalSummary] = useState<JournalSummary | null>(null);
   const [journalPatterns, setJournalPatterns] = useState<JournalPatterns | null>(null);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const unreadNotifications = notifications.filter((item) => !item.read_at).length;
+  const [notificationDetail, setNotificationDetail] = useState<NotificationRow | null>(null);
+  const [portfolioRequiredDate, setPortfolioRequiredDate] = useState<string | null>(null);
+  const [portfolioImportDate, setPortfolioImportDate] = useState<string | null>(null);
   const [internalView, setInternalView] = useState<WorkspaceView>(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return "Overview";
     return viewFromWebPath(window.location.pathname);
@@ -387,13 +400,16 @@ export function App({
   const [authRequired, setAuthRequired] = useState(false);
   const [pushStatus, setPushStatus] = useState("");
   const [dataQuality, setDataQuality] = useState<Awaited<ReturnType<typeof api.syncData>> | null>(null);
+  const [marketSync, setMarketSync] = useState<ActiveMarketSync | null>(null);
+  const [marketSyncError, setMarketSyncError] = useState("");
+  const [marketSyncSteps, setMarketSyncSteps] = useState<Record<string, MarketSyncProgress>>({});
   const [taskData, setTaskData] = useState<TaskDataResponse | null>(null);
   const [searchQuery, setSearchQuery] = useState(() => {
     if (typeof window === "undefined" || isTauriRuntime()) return "";
     return new URLSearchParams(window.location.search).get("q") ?? "";
   });
   const searchRef = useRef<HTMLInputElement>(null);
-  const focusMarketCandidates = useRef(false);
+  const focusMarketSection = useRef<"market-candidates" | "market-anomalies" | null>(null);
   const applyScheduler = useCallback((value: SchedulerResponse) => {
     latestRequest.current.health = (latestRequest.current.health ?? 0) + 1;
     setScheduler(value);
@@ -474,11 +490,7 @@ export function App({
       portfolio: async (commit) => commit(await api.portfolio(), setPortfolio),
       profile: async (commit) => commit(await api.profile(), setProfile),
       watchlists: async (commit) => commit((await api.watchlists()).watchlists, setWatchlists),
-      notifications: async (commit) => commit(await api.notifications(), ({ notifications }) => {
-        const rows = notifications as NotificationRow[];
-        setNotifications(rows);
-        setUnreadNotifications(rows.filter((item) => !item.read_at).length);
-      }),
+      notifications: async (commit) => commit((await api.notifications()).notifications as NotificationRow[], setNotifications),
       journal: async (commit) => commit((await api.journal({ task_id: journalFocus ?? undefined })).items, setJournalItems),
       journalSummary: async (commit) => commit(await api.journalSummary(), setJournalSummary),
       journalPatterns: async (commit) => commit(await api.journalPatterns(), setJournalPatterns),
@@ -517,6 +529,10 @@ export function App({
     if (storedToken) api.setToken(storedToken);
   }, [api, runtimeControl]);
   useEffect(() => { void refresh(); }, [refresh]);
+  const selectedTaskStatus = detail?.task.status;
+  useEffect(() => {
+    if (selectedTaskStatus === "WAITING_APPROVAL") void refreshResources(["notifications"]);
+  }, [selectedTaskStatus, refreshResources]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
@@ -571,15 +587,17 @@ export function App({
     if (!runtimeReady || !health || busy || taskCreation.current) return;
     taskCreation.current = true;
     setBusy(true);
+    setPortfolioRequiredDate(null);
+    let date = reviewSession(health, market).as_of;
     try {
       const snapshot = await marketForNewResearch();
-      const date = reviewSession(health, snapshot).as_of;
+      date = reviewSession(health, snapshot).as_of;
       const result = await api.createTask(taskInput(health, snapshot, date));
       goToResearch(result.task.id);
       setError(null);
       void refreshResources(["tasks"]);
     } catch (requestError) {
-      setError(friendlyError(requestError, "创建任务失败"));
+      showResearchError(requestError, date, "创建任务失败");
     } finally {
       taskCreation.current = false;
       setBusy(false);
@@ -655,18 +673,35 @@ export function App({
     return () => window.removeEventListener("keydown", onShortcut);
   }, [setView]);
 
-  const createResearch = async (symbol: string) => {
+  const showResearchError = (requestError: unknown, date: string, fallback: string) => {
+    if (missingPortfolio(requestError)) {
+      setError(null);
+      setPortfolioRequiredDate(date);
+    } else {
+      setError(friendlyError(requestError, fallback));
+    }
+  };
+
+  const createResearch = async (symbol: string, anomaly?: MarketAnomalies) => {
     if (!runtimeReady || !health || busy || taskCreation.current) return;
     taskCreation.current = true;
     setBusy(true);
+    setPortfolioRequiredDate(null);
+    setError(null);
+    let date = anomaly?.as_of ?? reviewSession(health, market).as_of;
     try {
-      const snapshot = await marketForNewResearch();
-      const result = await api.createResearchTask(symbol, taskInput(health, snapshot, reviewSession(health, snapshot).as_of));
+      const snapshot = anomaly ? market : await marketForNewResearch();
+      date = anomaly?.as_of ?? reviewSession(health, snapshot).as_of;
+      const input = taskInput(health, snapshot, date);
+      const result = await api.createResearchTask(symbol, {
+        ...input, marketSnapshotId: anomaly?.snapshot_id ?? input.marketSnapshotId,
+      });
+      setNotificationDetail(null);
       goToResearch(result.task.id);
       setError(null);
       void refreshResources(["tasks"]);
     } catch (requestError) {
-      setError(friendlyError(requestError, "创建个股研究失败"));
+      showResearchError(requestError, date, "创建个股研究失败");
     } finally {
       taskCreation.current = false;
       setBusy(false);
@@ -718,13 +753,14 @@ export function App({
   const retryTask = async () => {
     if (!selectedId) return;
     setBusy(true);
+    setPortfolioRequiredDate(null);
     try {
       const result = await api.retry(selectedId);
       selectTask(result.task.id);
       await refresh();
       await loadDetail(result.task.id);
     } catch (requestError) {
-      setError(friendlyError(requestError, "重试任务失败"));
+      showResearchError(requestError, String(detail?.task.target.as_of ?? "2026-11-05"), "重试任务失败");
     } finally {
       setBusy(false);
     }
@@ -786,6 +822,7 @@ export function App({
   const saveWatchlist = async (name: string, symbols: string[], append: boolean) => {
     const saved = await api.saveWatchlist(name, symbols, append);
     setWatchlists((lists) => [saved, ...lists.filter((list) => list.id !== saved.id)]);
+    void refreshResources(["market"]);
   };
 
   const saveJournalCandidate = async (candidateKey: string) => {
@@ -890,10 +927,17 @@ export function App({
       setNotifications((current) => current.map((item) => item.id === notification.id
         ? { ...item, read_at: new Date().toISOString() }
         : item));
-      setUnreadNotifications((count) => Math.max(0, count - 1));
+      void refreshResources(["notifications"]);
     } catch (requestError) {
       setError(friendlyError(requestError, "标记通知失败"));
     }
+  };
+
+  const openNotificationDetail = (notification: NotificationRow) => {
+    setPortfolioRequiredDate(null);
+    setError(null);
+    setNotificationDetail(notification);
+    void markNotificationRead(notification);
   };
 
   const enablePush = async () => {
@@ -920,6 +964,33 @@ export function App({
     approval: tasks.filter((task) => task.status === "WAITING_APPROVAL").length,
   }), [tasks]);
   const session = reviewSession(health, market);
+  const syncMarketData = async (refreshStage?: MarketSyncStage) => {
+    if (marketSync) return;
+    const symbols = [
+      ...(Array.isArray(portfolio?.positions) && portfolio.source !== "fixture"
+        ? portfolio.positions.map((position) => String(position.symbol)) : []),
+      ...watchlists.flatMap((list) => list.symbols),
+    ];
+    const codes = [...new Set(symbols.flatMap((symbol) => stockCode(symbol) ?? []))];
+    setMarketSync({ asOf: session.as_of, startedAt: Date.now() });
+    setMarketSyncError("");
+    setMarketSyncSteps({});
+    setDataQuality(null);
+    try {
+      const result = await api.syncData(session.as_of, codes, (progress) => {
+        setMarketSyncSteps((steps) => ({ ...steps, [progress.stage]: progress }));
+        if (progress.stage === "market_snapshot" && progress.status === "done") {
+          void refreshResources(["market"]);
+        }
+      }, refreshStage);
+      setDataQuality(result);
+    } catch (error) {
+      setMarketSyncError(friendlyError(error, "市场数据同步失败，请稍后重试。"));
+    } finally {
+      setMarketSync(null);
+      void refreshResources(["market", "health", "notifications"]);
+    }
+  };
   const isDemo = health?.provider.provider_id === "fixture";
   const sessionReady = market?.quality === "verified" && market.as_of === session.as_of
     && isDemo === isDemoMarket(market);
@@ -949,6 +1020,13 @@ export function App({
     }),
   ), [market]);
   const latestResearch = useMemo(() => latestStockResearch(tasks), [tasks]);
+  const portfolioPrompt = portfolioRequiredDate ? <div className="error-banner" role="alert">
+    <WarningCircleIcon size={16} aria-hidden="true" /><strong>缺少持仓快照</strong>
+    <span>请导入 {portfolioRequiredDate} 或更早的持仓，再开始研究。</span>
+    <button type="button" onClick={() => setPortfolioImportDate(portfolioRequiredDate)}>导入持仓</button>
+    <button type="button" className="icon-button" title="关闭提示" aria-label="关闭持仓提示"
+      onClick={() => setPortfolioRequiredDate(null)}><XIcon size={16} aria-hidden="true" /></button>
+  </div> : null;
   const lastReview = tasks.find((task) => task.trigger_type === "MarketClose" && !task.target._replay_of);
   const visibleTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -968,10 +1046,11 @@ export function App({
   const contentReady = runtimeReady && (!required || Boolean(pageLoad && !loadError));
 
   useEffect(() => {
-    if (!focusMarketCandidates.current) return;
+    const section = focusMarketSection.current;
+    if (!section) return;
     if (view !== "Market" || contentReady) {
-      focusMarketCandidates.current = false;
-      if (view === "Market") document.getElementById("market-candidates")?.focus();
+      focusMarketSection.current = null;
+      if (view === "Market") document.getElementById(section)?.focus();
     }
   }, [contentReady, view]);
 
@@ -993,8 +1072,8 @@ export function App({
   const showMobileDetail = Boolean(selectedId && mobileDetailOpen && isResearchWorkspace);
   const showWindowTitlebar = isTauriRuntime() && navigator.userAgent.includes("Macintosh");
   const scanKey = JSON.stringify([health?.provider?.provider_id, market?.snapshot_id, market?.quality, profile?.id, rules?.version]);
-  const openMarketCandidates = () => {
-    focusMarketCandidates.current = true;
+  const openMarketSection = (section: "market-candidates" | "market-anomalies") => {
+    focusMarketSection.current = section;
     setView("Market");
   };
   const openJournal = (taskId: string) => {
@@ -1060,7 +1139,7 @@ export function App({
           </div>
         </header>
 
-        {error && <div className="error-banner" role="alert"><WarningCircleIcon size={16} aria-hidden="true" /><strong>需要处理</strong><span>{error}</span><button onClick={() => void refresh()}>重试</button><button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => setError(null)}><XIcon size={16} aria-hidden="true" /></button></div>}
+        {!notificationDetail && error && <div className="error-banner" role="alert"><WarningCircleIcon size={16} aria-hidden="true" /><strong>需要处理</strong><span>{error}</span><button onClick={() => void refresh()}>重试</button><button className="icon-button" title="关闭提示" aria-label="关闭提示" onClick={() => setError(null)}><XIcon size={16} aria-hidden="true" /></button></div>}
 
         {!contentReady ? <section className="single-panel panel workspace-status">
           {loadError ? <>
@@ -1073,6 +1152,7 @@ export function App({
           loadError={(["profile", "portfolio", "rules", "market"] as const).some((name) => Boolean(resourceLoads[name]?.error))}
           onRetry={() => void refreshResources(["profile", "portfolio", "rules", "market"])} />}
         {view === "Overview" && <AttentionFeed notifications={notifications} onOpenTask={goToResearch}
+          onOpenDetail={openNotificationDetail}
           load={resourceLoads.notifications} onRetry={() => void refreshResources(["notifications"])} />}
         {view === "Overview" && runtimeMode !== "cloud" && <HoldingsReviewCard
           onOpenTask={goToResearch} onOpenPortfolio={() => setView("Portfolio")} />}
@@ -1093,12 +1173,13 @@ export function App({
             pending={market === null && error === null} savedScan={candidateScan?.key === scanKey ? candidateScan.result : null}
             onScanned={(result) => setCandidateScan({ key: scanKey, result })}
             watchlists={watchlists} onResearch={(symbol) => void createResearch(symbol)}
+            onResearchAnomaly={(symbol, anomaly) => void createResearch(symbol, anomaly)} busy={busy || !health}
             onWatch={(symbol) => saveWatchlist(DEFAULT_WATCHLIST, [symbol], true)}
             onOpenData={() => setView("Data Health")} /> :
           view === "Watchlist" ? <WatchlistView watchlists={watchlists} onSaved={saveWatchlist}
             instruments={instrumentNames} latest={latestResearch} taskLoad={resourceLoads.tasks} busy={busy}
             onRetryTasks={() => void refreshResources(["tasks"])} onOpenTask={goToResearch}
-            onResearch={(symbol) => void createResearch(symbol)} onOpenMarket={openMarketCandidates} /> :
+            onResearch={(symbol) => void createResearch(symbol)} onOpenMarket={() => openMarketSection("market-candidates")} /> :
           view === "Portfolio" ? <PortfolioView portfolio={portfolio} demoDate={health?.provider?.provider_id === "fixture" ? REPLAY_AS_OF : undefined} onChanged={(snapshot) => {
             if (snapshot) setPortfolio(snapshot);
             void refresh();
@@ -1109,11 +1190,9 @@ export function App({
             localCredentials={runtimeMode === "local" && runtimeReady} /> :
           view === "Rules" ? <RulesView rules={rules} evaluation={detail?.decision?.rationale.rules} onSaved={() => void refresh()} /> :
           view === "Data Health" ? <DataHealthView health={health} market={market} session={session} marketLabel={dataState.label}
-            syncResult={dataQuality} onSchedulerChange={applyScheduler}
-            symbols={[...(Array.isArray(portfolio?.positions) && portfolio.source !== "fixture"
-              ? portfolio.positions.map((position) => String(position.symbol)) : []), ...watchlists.flatMap((list) => list.symbols)]}
-            onSyncResult={(result) => { setDataQuality(result); void refreshResources(["market", "health"]); }}
-            onOpenSettings={() => setView("Profile")} /> :
+            syncResult={dataQuality} marketSync={marketSync} syncError={marketSyncError}
+            syncSteps={marketSyncSteps} onSync={syncMarketData} onSchedulerChange={applyScheduler}
+            onOpenSettings={() => setView("Profile")} onOpenAnomalies={() => openMarketSection("market-anomalies")} /> :
           view === "Audit" ? <AuditView detail={detail} /> :
           view === "Notifications" ? <NotificationsView
             notifications={notifications}
@@ -1121,6 +1200,7 @@ export function App({
             onEnablePush={() => void enablePush()}
             pushStatus={pushStatus}
             onOpenTask={goToResearch}
+            onOpenDetail={openNotificationDetail}
           /> :
         <div className="workspace">
           <section className="queue-panel panel">
@@ -1167,6 +1247,32 @@ export function App({
         setPreviewOpen(false);
         setView("Portfolio");
       }} />}
+      {notificationDetail && !portfolioImportDate && <AnomalyNotificationDialog key={notificationDetail.id}
+        notification={notificationDetail} busy={busy || !health}
+        onClose={() => {
+          setNotificationDetail(null);
+          setPortfolioRequiredDate(null);
+          setError(null);
+        }} onOpenTask={(taskId) => { setNotificationDetail(null); goToResearch(taskId); }}
+        onResearch={(symbol, anomaly) => void createResearch(symbol, anomaly)}>
+        {portfolioPrompt}
+        {error && <p className="form-hint" role="alert">{error}</p>}
+      </AnomalyNotificationDialog>}
+      {portfolioRequiredDate && !notificationDetail && !portfolioImportDate && <WorkspaceDialog
+        title="缺少持仓快照" pending={false} onClose={() => setPortfolioRequiredDate(null)}>
+        <p className="portfolio-dialog-hint">请导入 {portfolioRequiredDate} 或更早的持仓，再开始研究。</p>
+        <div className="runtime-dialog-actions">
+          <button type="button" className="quiet-button" onClick={() => setPortfolioRequiredDate(null)}>取消</button>
+          <button type="button" className="primary-button" data-initial-focus onClick={() => setPortfolioImportDate(portfolioRequiredDate)}>导入持仓</button>
+        </div>
+      </WorkspaceDialog>}
+      {portfolioImportDate && <PortfolioImportDialog defaultDate={portfolioImportDate}
+        onClose={() => setPortfolioImportDate(null)}
+        onImported={(snapshot) => {
+          setPortfolioImportDate(null);
+          if (String(snapshot.as_of) <= portfolioImportDate) setPortfolioRequiredDate(null);
+          void refreshResources(["portfolio", "market", "notifications"]);
+        }} />}
     </div>
   );
 }
@@ -1179,7 +1285,17 @@ type NotificationRow = {
   body: string;
   created_at: string;
   read_at?: string | null;
+  data?: MarketAnomalies | { as_of: string; count: number };
 };
+
+function NotificationMark({ notification }: { notification: NotificationRow }) {
+  const needsAttention = ["PortfolioRiskChanged", "DataQualityDegraded", "EventDeliveryFailed",
+    "TaskFailed", "TaskWaitingApproval"].includes(notification.event_type);
+  return <span className="notification-mark" aria-hidden="true">
+    {needsAttention ? <WarningCircleIcon size={17} />
+      : !notification.read_at && <span className="notification-unread-dot" />}
+  </span>;
+}
 
 function notificationLabel(eventType: string) {
   const labels: Record<string, string> = {
@@ -1190,6 +1306,8 @@ function notificationLabel(eventType: string) {
     DataQualityDegraded: "数据质量",
     MarketBreadthChanged: "市场广度变化",
     PriceVolumeAnomaly: "量价异常",
+    PriceVolumeDigest: "关注异动",
+    PriceVolumeHistory: "历史异动研究",
     EventDeliveryFailed: "事件处理失败",
     TaskFailed: "任务失败",
     TaskWaitingApproval: "等待确认",
@@ -1197,9 +1315,10 @@ function notificationLabel(eventType: string) {
   return labels[eventType] ?? eventType;
 }
 
-function AttentionFeed({ notifications, onOpenTask, load, onRetry }: {
+function AttentionFeed({ notifications, onOpenTask, onOpenDetail, load, onRetry }: {
   notifications: NotificationRow[];
   onOpenTask: (taskId: string) => void;
+  onOpenDetail: (notification: NotificationRow) => void;
   load?: ResourceStatus;
   onRetry: () => void;
 }) {
@@ -1213,13 +1332,15 @@ function AttentionFeed({ notifications, onOpenTask, load, onRetry }: {
     {!load && <p className="attention-empty" role="status">正在读取通知…</p>}
     {latest.length === 0 ? load && !load.error && <div className="attention-empty"><strong>今天还没有需要处理的事件</strong><span>收盘、持仓风险和数据质量变化会自动出现在这里。</span></div> :
       <div className="attention-list">{latest.map((notification) => <article className={`attention-row ${notification.read_at ? "read" : ""}`} key={notification.id}>
-        <div className="attention-mark">{notification.read_at ? <CheckIcon size={16} aria-hidden="true" /> : <WarningCircleIcon size={16} aria-hidden="true" />}</div>
+        <NotificationMark notification={notification} />
         <div className="attention-copy">
           <div><span className="attention-type">{notificationLabel(notification.event_type)}</span><time>{formatDate(notification.created_at)}</time></div>
           <strong>{notification.title}</strong>
           <p>{notification.body}</p>
         </div>
-        {notification.task_id && <button className="quiet-button" onClick={() => onOpenTask(notification.task_id as string)}>查看研究</button>}
+        {notification.data
+          ? <button className="quiet-button" onClick={() => onOpenDetail(notification)}>查看明细</button>
+          : notification.task_id && <button className="quiet-button" onClick={() => onOpenTask(notification.task_id as string)}>查看研究</button>}
       </article>)}</div>}
   </section>;
 }
@@ -1547,12 +1668,14 @@ function NotificationsView({
   onEnablePush,
   pushStatus,
   onOpenTask,
+  onOpenDetail,
 }: {
   notifications: NotificationRow[];
   onRead: (notification: NotificationRow) => void;
   onEnablePush: () => void;
   pushStatus: string;
   onOpenTask: (taskId: string) => void;
+  onOpenDetail: (notification: NotificationRow) => void;
 }) {
   return <section className="single-panel panel notifications-panel">
     <div className="panel-header">
@@ -1565,18 +1688,60 @@ function NotificationsView({
     </div>
     {notifications.length === 0 ? <EmptyState message="还没有通知。任务失败、数据质量降级和审批事件会显示在这里。" /> :
       <div className="notification-list">{notifications.map((notification) => <article className={`notification-row ${notification.read_at ? "read" : "unread"}`} key={notification.id}>
-        <div className="notification-mark">{notification.read_at ? <CheckIcon size={16} aria-hidden="true" /> : <WarningCircleIcon size={16} aria-hidden="true" />}</div>
+        <NotificationMark notification={notification} />
         <div className="notification-copy">
           <div className="notification-heading"><strong>{notification.title}</strong><time>{formatDate(notification.created_at)}</time></div>
           <p>{notification.body}</p>
-          <span>{notificationLabel(notification.event_type)}{notification.task_id ? ` · ${notification.task_id}` : ""}</span>
+          <span>{notificationLabel(notification.event_type)}{notification.event_type === "PriceVolumeDigest" && notification.data ? ` · ${notification.data.as_of}` : ""}</span>
         </div>
         <div className="notification-actions">
-          {notification.task_id && <button className="quiet-button" onClick={() => onOpenTask(notification.task_id as string)}>查看研究</button>}
+          {notification.data
+            ? <button className="quiet-button" onClick={() => onOpenDetail(notification)}>查看明细</button>
+            : notification.task_id && <button className="quiet-button" onClick={() => onOpenTask(notification.task_id as string)}>查看研究</button>}
           {!notification.read_at && <button className="quiet-button" onClick={() => onRead(notification)}>标为已读</button>}
         </div>
       </article>)}</div>}
   </section>;
+}
+
+function AnomalyNotificationDialog({ notification, busy, onClose, onOpenTask, onResearch, children }: {
+  notification: NotificationRow;
+  busy: boolean;
+  onClose: () => void;
+  onOpenTask: (taskId: string) => void;
+  onResearch: (symbol: string, anomaly: MarketAnomalies) => void;
+  children: ReactNode;
+}) {
+  const api = useWorkspaceApi();
+  const [history, setHistory] = useState<HistoricalAnomalyTask[]>();
+  const [error, setError] = useState("");
+  const [visible, setVisible] = useState(25);
+  const data = notification.data;
+  const legacy = data !== undefined && "count" in data;
+  useEffect(() => {
+    if (!legacy) return;
+    let active = true;
+    void api.notificationAnomalies(notification.id).then(({ items }) => {
+      if (active) setHistory(items);
+    }).catch((requestError) => {
+      if (active) setError(friendlyError(requestError, "历史异动明细暂不可用。"));
+    });
+    return () => { active = false; };
+  }, [api, legacy, notification.id]);
+
+  return <WorkspaceDialog title={notification.title} pending={busy} onClose={onClose} wide>
+    {children}
+    {data && "items" in data && <MarketAnomalyList data={data} busy={busy} onResearch={onResearch} />}
+    {legacy && (history ? <div className="anomaly-list">
+      {history.slice(0, visible).map((task) => <div className="anomaly-row" key={task.task_id}>
+        <div><strong>{task.symbol ?? "标的未记录"}</strong><small>{statusLabel(task.status)}</small></div>
+        <span>{task.error?.code === "PORTFOLIO_AS_OF_UNAVAILABLE" ? "缺少持仓快照" : (task.error?.message || task.error?.code)}</span>
+        <button type="button" className="quiet-button" onClick={() => onOpenTask(task.task_id)}>查看研究</button>
+      </div>)}
+      {visible < history.length && <button type="button" className="text-button" onClick={() => setVisible(visible + 25)}>显示更多</button>}
+    </div> : <p className="form-hint" role="status">{error || "正在读取历史异动明细…"}</p>)}
+    <div className="runtime-dialog-actions"><button type="button" className="quiet-button" disabled={busy} onClick={onClose}>关闭</button></div>
+  </WorkspaceDialog>;
 }
 
 const TASK_GROUPS: Array<{ key: string; label: string; statuses: string[] }> = [
@@ -2015,9 +2180,53 @@ function MarketCandidates({ asOf, source, fixture, pending, savedScan, watchlist
   </div>;
 }
 
-function MarketView({ market, demo, ...candidateProps }: {
-  market: Record<string, unknown> | null;
+function MarketAnomalyList({ data, busy, market = false, onResearch }: {
+  data: MarketAnomalies;
+  busy: boolean;
+  market?: boolean;
+  onResearch: (symbol: string, anomaly: MarketAnomalies) => void;
+}) {
+  const [reason, setReason] = useState("all");
+  const [followedOnly, setFollowedOnly] = useState(false);
+  const [visible, setVisible] = useState(8);
+  const filtered = data.items.filter((item) =>
+    (!followedOnly || item.followed) && (
+      reason === "all" || (reason === "price" ? item.price_triggered : item.volume_triggered)
+    ),
+  );
+  return <div className="anomaly-list">
+    {market && data.items.length > 0 && <div className="anomaly-filters">
+      <label>触发原因 <select value={reason} onChange={(event) => { setReason(event.target.value); setVisible(8); }}>
+        <option value="all">全部</option>
+        <option value="price">涨跌幅达阈值</option>
+        <option value="volume">量比 ≥ 2</option>
+      </select></label>
+      <label><input type="checkbox" checked={followedOnly} onChange={(event) => { setFollowedOnly(event.target.checked); setVisible(8); }} /> 只看持仓和自选</label>
+      <span role="status">{filtered.length} 个标的</span>
+    </div>}
+    {!market && <p className="anomaly-date">交易日 {data.as_of}</p>}
+    {filtered.length === 0
+      ? <EmptyState message={data.items.length ? "当前筛选条件下没有异动。" : "这份快照中没有标的达到异动阈值。"} />
+      : filtered.slice(0, visible).map((item) => <div className="anomaly-row" key={item.symbol}>
+        <div><strong>{item.name || item.symbol}</strong><small>{item.name ? item.symbol : ""}{item.followed ? `${item.name ? " · " : ""}已关注` : ""}</small></div>
+        <div className="anomaly-reasons">
+          {item.price_triggered && item.change_pct !== null && <span className={item.change_pct >= 0 ? "up" : "down"}>
+            涨跌幅 {item.change_pct > 0 ? "+" : ""}{item.change_pct.toFixed(2)}%
+          </span>}
+          {item.volume_triggered && item.volume_ratio !== null && <span>量比 {item.volume_ratio.toFixed(2)}</span>}
+        </div>
+        <button type="button" className="quiet-button" disabled={busy} onClick={() => onResearch(item.symbol, data)}
+          aria-label={`研究 ${item.name || item.symbol}`}>研究</button>
+      </div>)}
+    {visible < filtered.length && <button type="button" className="text-button" onClick={() => setVisible(visible + 20)}>显示更多</button>}
+  </div>;
+}
+
+function MarketView({ market, demo, busy, onResearchAnomaly, ...candidateProps }: {
+  market: MarketWorkspace | null;
   demo: boolean;
+  busy: boolean;
+  onResearchAnomaly: (symbol: string, anomaly: MarketAnomalies) => void;
 } & Omit<MarketCandidatesProps, "asOf" | "source" | "fixture">) {
   const snapshot = market?.snapshot_id ? market : null;
   const demoSnapshot = snapshot?.source === "fixture" || snapshot?.provider_id === "fixture";
@@ -2027,6 +2236,12 @@ function MarketView({ market, demo, ...candidateProps }: {
   const sectors = (snapshot?.sectors as Array<{ name: string; change_pct: number; breadth: number }> | undefined) ?? [];
   const indices = (snapshot?.indices as Array<{ name: string; close: number; change_pct: number }> | undefined) ?? [];
   return <section className="control-grid">
+    {market?.price_volume_anomalies && <div id="market-anomalies" className="wide" tabIndex={-1}>
+      <Panel title="市场异动" eyebrow={market.price_volume_anomalies.as_of}>
+        <MarketAnomalyList key={market.price_volume_anomalies.snapshot_id} data={market.price_volume_anomalies}
+          busy={busy} market onResearch={onResearchAnomaly} />
+      </Panel>
+    </div>}
     <MarketCandidates asOf={asOf} source={source} fixture={demo ? `close-${REPLAY_AS_OF}.json` : undefined} {...candidateProps} />
     {snapshot && <>
       <Panel title="市场快照" eyebrow={`截至 ${String(snapshot.as_of)}`} wide>
@@ -2570,43 +2785,140 @@ function RulesView({ rules, evaluation, onSaved }: { rules: Record<string, unkno
   </section>;
 }
 
+const syncLabels: Record<string, string> = {
+  market_snapshot: "市场快照", trading_calendar: "交易日历", universe: "标的列表",
+  daily_bars: "个股日线", fundamentals: "基本面", research_sources: "资讯与公告",
+  news: "资讯", filing: "公告", filings: "公告", request: "复盘日期", finalizing: "整理同步结果",
+};
+
+const syncFailureReasons: Record<string, string> = {
+  Push2RateLimitError: "东财接口限流，请稍后重试。",
+  CapabilityUnavailable: "当前没有可用数据源，请检查数据源连接。",
+  ConnectionError: "数据源连接失败，请检查网络连接。",
+  STAGE_TIMEOUT: "等待数据源响应超时，请稍后重试。",
+  StageTimeout: "等待数据源响应超时，请稍后重试。",
+  TimeoutError: "等待数据源响应超时，请稍后重试。",
+  UNIVERSE_COVERAGE_MISSING: "标的列表缺少部分市场。",
+  POINT_IN_TIME_UNAVAILABLE: "数据源未提供该复盘日的市场快照。",
+  FIELD_MISSING: "数据源返回的快照缺少必需字段。",
+  AS_OF_IN_FUTURE: "复盘日期晚于当前日期。",
+  TEMPORAL_METADATA_INVALID: "数据日期或采集时间未通过校验。",
+  DATA_QUALITY_INCOMPLETE: "数据源未返回通过校验的数据。",
+};
+
+function syncIssue(failure: Record<string, unknown>) {
+  const source = scanSourceLabels[failure.provider_id as keyof typeof scanSourceLabels];
+  const code = typeof failure.code === "string" ? failure.code : "";
+  const temporalReason = typeof failure.reason === "string" ? syncFailureReasons[failure.reason] : undefined;
+  const reason = temporalReason ?? syncFailureReasons[code] ?? (code && code !== "RuntimeError"
+    ? `数据源返回异常（${code}）。` : "数据源未返回可用数据。");
+  return [failure.symbol, source, reason].filter(Boolean).join(" · ");
+}
+
+const syncStepLabels = {
+  running: "同步中", validating: "校验中", done: "已完成", reused: "已复用",
+  partial: "部分完成", failed: "失败", skipped: "已跳过",
+};
+
+function MarketSyncSteps({ steps, failures, running, canRetry, onSync }: {
+  steps: Record<string, MarketSyncProgress>;
+  failures: Array<Record<string, unknown>>;
+  running: boolean;
+  canRetry: boolean;
+  onSync: (stage: MarketSyncStage) => Promise<void>;
+}) {
+  return <ol className="market-sync-steps" aria-label="行情同步步骤">
+    {marketSyncStages.map((stage) => {
+      const step = steps[stage];
+      const status = step?.status;
+      const inProgress = status === "running" || status === "validating" || Boolean(step && !status);
+      const label = inProgress && !running ? "进度中断" : status ? syncStepLabels[status] : "等待";
+      const fetched = step?.fetched ?? 0;
+      const reused = step?.reused ?? 0;
+      const failed = step?.failed ?? 0;
+      const done = fetched + reused + failed;
+      const detail = status === "skipped" ? (step?.reason === "no_symbols" ? "无持仓或自选标的"
+        : step?.reason === "outside_scope" ? "本次未选择此项" : "数据源未提供此项")
+        : status === "validating" ? "正在核对交易日和标的覆盖"
+        : status === "reused" && (step?.total ?? 0) <= 1 ? "使用本地已验证的数据"
+        : stage === "market_snapshot" && status === "done" ? "行情已保存"
+        : step?.total && step.total > 1 ? `已处理 ${done}/${step.total} · 新拉取 ${fetched} · 复用 ${reused} · 失败 ${failed}`
+        : step?.saved_rows ? `已保存 ${step.saved_rows.toLocaleString("zh-CN")} 条`
+        : inProgress ? (step?.symbol ? `正在处理 ${step.symbol}` : "等待数据源响应")
+        : status === "done" ? "查询完成，无新增记录" : "";
+      const issues = Array.from(new Set(failures
+        .filter((failure) => failure.kind === stage || stage === "filing" && failure.kind === "filings")
+        .map(syncIssue)));
+      return <li key={stage}>
+        <div className="market-sync-step">
+          <span className="market-sync-state" data-status={status}>{label}</span>
+          <div>
+            <strong>{syncLabels[stage]}</strong>
+            {detail && <small>{detail}{inProgress && running && step?.symbol && (step.total ?? 0) > 1 && ` · 正在处理 ${step.symbol}`}</small>}
+            {step?.total && step.total > 1 && status !== "skipped" && <progress
+              className="market-sync-progress" value={done} max={step.total}
+              aria-label={`${syncLabels[stage]}处理进度`} aria-valuetext={`已处理 ${done}/${step.total} 个标的`} />}
+          </div>
+          {canRetry && status && !inProgress && (status !== "skipped" || step.reason === "outside_scope") && <button type="button" className="text-button"
+            title="重新拉取此项"
+            aria-label={`重新拉取${syncLabels[stage]}`} onClick={() => void onSync(stage)}>重拉</button>}
+        </div>
+        {issues.length > 0 && <details className="market-sync-issues">
+          <summary>{issues.length} 个问题</summary>
+          <ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+        </details>}
+      </li>;
+    })}
+  </ol>;
+}
+
 function DataHealthView({
-  health, market, session, marketLabel, syncResult, symbols, onSyncResult, onSchedulerChange, onOpenSettings,
+  health, market, session, marketLabel, syncResult, marketSync, syncError, syncSteps, onSync, onSchedulerChange, onOpenSettings, onOpenAnomalies,
 }: {
   health: WorkspaceHealth | null;
   market: MarketWorkspace | null;
   session: ReturnType<typeof reviewSession>;
   marketLabel: string;
   syncResult: Record<string, unknown> | null;
-  symbols: string[];
-  onSyncResult: (result: Record<string, unknown>) => void;
+  marketSync: ActiveMarketSync | null;
+  syncError: string;
+  syncSteps: Record<string, MarketSyncProgress>;
+  onSync: (stage?: MarketSyncStage) => Promise<void>;
   onSchedulerChange: (value: SchedulerResponse) => void;
   onOpenSettings: () => void;
+  onOpenAnomalies: () => void;
 }) {
   const api = useWorkspaceApi();
-  const [pending, setPending] = useState<"sync" | "scheduler" | null>(null);
+  const [schedulerPending, setSchedulerPending] = useState(false);
   const [status, setStatus] = useState("");
+  const [now, setNow] = useState(Date.now);
+  const startedAt = marketSync?.startedAt;
+  useEffect(() => {
+    if (startedAt === undefined) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  const elapsed = startedAt === undefined ? 0 : Math.max(0, Math.floor((now - startedAt) / 1000));
   const demo = health?.provider.provider_id === "fixture";
   const lastVerified = market?.last_verified ?? (market?.as_of && market.as_of <= session.as_of
     && market.quality === "verified" && (demo || !isDemoMarket(market)) ? market : null);
   const failures = Array.isArray(syncResult?.failures) ? syncResult.failures as Array<Record<string, unknown>> : [];
-  const failureLabels = { market_snapshot: "市场快照", daily_bars: "个股日线", universe: "标的列表", trading_calendar: "交易日历", fundamentals: "基本面", research_sources: "资讯与公告" };
-  const rateLimited = failures.some((failure) => failure.code === "Push2RateLimitError");
-  const sync = async () => {
-    setPending("sync");
-    setStatus("");
-    try {
-      const codes = [...new Set(symbols.flatMap((symbol) => stockCode(symbol) ?? []))];
-      const result = await api.syncData(session.as_of, codes);
-      onSyncResult(result);
-    } catch (error) {
-      setStatus(friendlyError(error, "市场数据同步失败，请稍后重试。"));
-    } finally {
-      setPending(null);
-    }
-  };
+  const storedSteps = Array.isArray(syncResult?.stages) ? syncResult.stages as MarketSyncProgress[] : [];
+  const steps = storedSteps.length ? Object.fromEntries(storedSteps.map((step) => [step.stage, step])) : syncSteps;
+  const hasSteps = Boolean(storedSteps.length || Object.values(syncSteps).some((step) =>
+    step.stage !== "finalizing" && step.status,
+  ) || marketSync && !Object.keys(syncSteps).length);
+  const legacyProgress = marketSync && !hasSteps ? Object.values(syncSteps).at(-1) : undefined;
+  const finished = marketSyncStages.filter((stage) => {
+    const status = steps[stage]?.status;
+    return status && status !== "running" && status !== "validating";
+  }).length;
+  const issues = failures.filter((failure) => !hasSteps || !Object.hasOwn(steps, String(failure.kind)));
+  const saved = Object.entries((syncResult?.counts ?? {}) as Record<string, number>)
+    .filter(([kind, count]) => syncLabels[kind] && count > 0)
+    .map(([kind, count]) => `${syncLabels[kind]} ${count.toLocaleString("zh-CN")} 条`);
   const toggleScheduler = async () => {
-    setPending("scheduler");
+    setSchedulerPending(true);
     setStatus("");
     try {
       const result = await (health?.scheduler?.enabled ? api.stopScheduler() : api.startScheduler());
@@ -2615,7 +2927,7 @@ function DataHealthView({
     } catch (error) {
       setStatus(friendlyError(error, "调度状态更新失败"));
     } finally {
-      setPending(null);
+      setSchedulerPending(false);
     }
   };
   return <section className="control-grid">
@@ -2625,14 +2937,40 @@ function DataHealthView({
         <div><span>当前状态</span><strong>{marketLabel}</strong></div>
         <div><span>最近可用行情</span><strong>{lastVerified?.as_of ? [lastVerified.as_of, localizedLabel(scanSourceLabels, lastVerified.source, "来源未知")].join(" · ") : "暂无快照"}</strong></div>
         {lastVerified?.observed_at && <div><span>数据时间</span><strong>{formatDate(lastVerified.observed_at)}</strong></div>}
-        {syncResult && <div><span>最近一次同步</span><strong>{String(syncResult.as_of ?? session.as_of)} · {localizedLabel(qualityLabels, syncResult.quality, "未知")}</strong></div>}
+        {syncResult && <div><span>最近一次同步</span><strong>{String(syncResult.as_of ?? session.as_of)} · {syncResult.quality === "partial" ? "部分完成" : syncResult.quality === "verified" ? "已完成" : localizedLabel(qualityLabels, syncResult.quality, "未知")}</strong></div>}
+        {market?.price_volume_anomalies?.as_of === (syncResult?.as_of ?? session.as_of) && <div>
+          <span>市场异动</span><button type="button" className="text-button" onClick={onOpenAnomalies}>
+            查看 {market.price_volume_anomalies.items.length} 个异动标的
+          </button>
+        </div>}
       </div>
-      {failures.length > 0 && <div className="sync-failures" role="status">
-        <strong>暂未取到 {Array.from(new Set(failures.map((failure) => localizedLabel(failureLabels, failure.kind, "部分数据")))).join("、")}</strong>
-        <p>{rateLimited ? "上游行情服务限流，请稍后再同步，或到设置检查备用数据源。" : "可以稍后重试，或到设置检查数据源和凭据。"}</p>
+      {(marketSync || hasSteps) && <div className="form-hint">
+        <strong role="status">{marketSync && `${marketSync.asOf} · `}{legacyProgress
+          ? `${syncLabels[legacyProgress.stage] ?? "同步中"}${legacyProgress.symbol ? ` · ${legacyProgress.symbol}` : ""}`
+          : `${finished}/${marketSyncStages.length} 项已结束`}
+          {marketSync && syncSteps.finalizing && " · 正在整理结果"}</strong>
+        {hasSteps && <progress className="market-sync-progress" value={finished} max={marketSyncStages.length}
+          aria-label="行情同步总进度" aria-valuetext={`${finished}/${marketSyncStages.length} 项已结束`} />}
+        {marketSync && <div>已用时 {Math.floor(elapsed / 60)} 分 {elapsed % 60} 秒</div>}
+      </div>}
+      {hasSteps && <MarketSyncSteps steps={steps} failures={failures} running={Boolean(marketSync)}
+        canRetry={!marketSync && !schedulerPending && syncResult?.as_of === session.as_of} onSync={onSync} />}
+      {syncError && <p className="sync-failures" role="alert">{syncError}</p>}
+      {syncResult && <p className="form-hint" role="status">
+        {syncResult.market_snapshot_quality === "verified" ? "复盘行情已就绪。"
+          : steps.market_snapshot?.status === "skipped" ? "本次未更新市场快照。" : "本次市场快照未通过校验。"}
+        {saved.length > 0 && ` 本次新保存 ${saved.join("、")}。`}
+      </p>}
+      {issues.length > 0 && <div className="sync-failures">
+          <strong>同步遇到的问题</strong>
+          <ul>{Array.from(new Set(issues.map((issue) =>
+            `${syncLabels[String(issue.kind)] ?? "部分数据"} · ${syncIssue(issue)}`,
+          ))).map((issue) => <li key={issue}>{issue}</li>)}</ul>
       </div>}
       <div className="form-row">
-        <button className="primary-button" disabled={pending !== null} onClick={() => void sync()}>{pending === "sync" ? "正在同步…" : "同步市场数据"}</button>
+        <button className="primary-button" disabled={Boolean(marketSync) || schedulerPending} onClick={() => void onSync()}>
+          {marketSync ? "正在同步…" : syncResult?.as_of === session.as_of ? "补齐缺失数据" : "同步市场数据"}
+        </button>
         <button className="quiet-button" onClick={onOpenSettings}>数据源设置</button>
       </div>
     </Panel>
@@ -2643,7 +2981,7 @@ function DataHealthView({
         <div><span>上次触发</span><strong>{health?.scheduler?.last_dispatched_date ?? "尚未运行"}</strong></div>
       </div>
       <div className="form-row">
-        <button className="quiet-button" disabled={pending !== null} onClick={() => void toggleScheduler()}>{health?.scheduler?.enabled ? "停止调度" : "开启调度"}</button>
+        <button className="quiet-button" disabled={Boolean(marketSync) || schedulerPending} onClick={() => void toggleScheduler()}>{health?.scheduler?.enabled ? "停止调度" : "开启调度"}</button>
       </div>
     </Panel>
     <Panel title="连接">

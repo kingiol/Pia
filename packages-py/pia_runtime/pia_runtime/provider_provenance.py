@@ -17,6 +17,11 @@ class CapabilityUnavailable(RuntimeError):
     code = "CAPABILITY_UNAVAILABLE"
     retryable = True
 
+    def __init__(self, message: str, *, last_attempt: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.provider_reason = last_attempt["reason_code"] if last_attempt else None
+        self.provider_id = last_attempt["provider_id"] if last_attempt else None
+
 
 def routed_call(
     runtime: Any, capability: str, method_name: str, args: tuple,
@@ -177,7 +182,9 @@ def routed_call(
             return provider, result
     if degraded_provider is not None:
         return degraded_provider, attach_provenance(degraded_result, degraded_provider.provider_id, attempts)
-    raise CapabilityUnavailable(f"CAPABILITY_UNAVAILABLE: {capability}")
+    raise CapabilityUnavailable(
+        f"CAPABILITY_UNAVAILABLE: {capability}", last_attempt=attempts[-1] if attempts else None,
+    )
 
 
 def attach_provenance(result: Any, provider_id: str, attempts: list[dict]) -> Any:

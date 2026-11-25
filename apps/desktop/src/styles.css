@@ -329,13 +329,26 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .audit-payload pre { margin: 8px 0 0; padding: 12px; background: var(--surface-alt); white-space: pre-wrap; overflow-wrap: anywhere; }
 .notification-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .notification-row:last-child { border-bottom: 0; }
-.notification-mark, .attention-mark { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; color: var(--warning); }
-.read .notification-mark, .read .attention-mark { color: var(--muted); }
+.notification-mark { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; color: var(--warning); }
+.read .notification-mark { color: var(--muted); }
+.notification-unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .notification-copy { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
 .notification-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
 .notification-heading strong { font-size: 14px; line-height: 20px; }
 .notification-heading time, .notification-copy > span { color: var(--muted); font-size: 12px; line-height: 20px; }
 .notification-copy p { margin: 8px 0; color: var(--secondary); font-size: 13px; line-height: 20px; }
+.anomaly-list { padding: 0 16px 12px; }
+.runtime-dialog .anomaly-list { padding: 0; }
+.anomaly-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 12px; color: var(--secondary); font-size: 13px; }
+.anomaly-filters label { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.anomaly-filters select { width: auto; }
+.anomaly-filters input { width: auto; min-height: auto; padding: 0; accent-color: var(--accent); }
+.anomaly-filters > span { margin-left: auto; color: var(--muted); }
+.anomaly-date { margin: 8px 0; color: var(--muted); font-size: 13px; }
+.anomaly-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+.anomaly-row small { display: block; color: var(--muted); }
+.anomaly-row > button { justify-self: end; white-space: nowrap; }
+.anomaly-reasons { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
 
 .strategy-agent-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 20px; border-bottom: 1px solid var(--line); }
 .strategy-agent-column { min-width: 0; padding: 12px 16px 16px; }
@@ -361,10 +374,11 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .welcome-copy h2 { margin-top: 4px; }
 .welcome-copy p { margin-top: 4px; color: var(--secondary); font-size: 12px; line-height: 20px; }
 .welcome-copy small { color: var(--muted); font-size: 12px; line-height: 16px; }
-.setup-progress { display: block; appearance: none; width: 100%; height: 4px; margin: 12px 0 8px; border: 0; border-radius: 0; background: var(--line); color: var(--accent); accent-color: var(--accent); }
-.setup-progress::-webkit-progress-bar { background: var(--line); }
-.setup-progress::-webkit-progress-value { background: var(--accent); }
-.setup-progress::-moz-progress-bar { background: var(--accent); }
+.setup-progress, .market-sync-progress { display: block; appearance: none; width: 100%; height: 4px; border: 0; border-radius: 0; background: var(--line); color: var(--accent); accent-color: var(--accent); }
+.setup-progress { margin: 12px 0 8px; }
+.setup-progress::-webkit-progress-bar, .market-sync-progress::-webkit-progress-bar { background: var(--line); }
+.setup-progress::-webkit-progress-value, .market-sync-progress::-webkit-progress-value { background: var(--accent); }
+.setup-progress::-moz-progress-bar, .market-sync-progress::-moz-progress-bar { background: var(--accent); }
 .setup-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .setup-step { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-content: start; align-items: start; gap: 8px; width: 100%; padding: 12px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .setup-step:hover { background: var(--canvas); border-color: var(--line-strong); }
@@ -387,6 +401,18 @@ pre { max-height: 240px; overflow: auto; margin: 12px 0; padding: 12px; backgrou
 .demo-review summary { cursor: pointer; }
 .demo-review details p { margin-top: 8px; }
 .sync-failures { margin: 8px 16px; padding: 10px 12px; border-radius: var(--radius); background: var(--warning-soft); }
+.market-sync-progress { margin: 8px 0 6px; }
+.market-sync-steps { margin: 4px 16px 12px; padding: 0; list-style: none; }
+.market-sync-steps > li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.market-sync-step { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) auto; align-items: baseline; gap: 12px; font-size: 13px; line-height: 20px; }
+.market-sync-step small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.market-sync-step .market-sync-progress { height: 3px; margin: 5px 0 0; }
+.market-sync-state { color: var(--muted); }
+.market-sync-state[data-status="running"], .market-sync-state[data-status="validating"] { color: var(--accent); }
+.market-sync-state[data-status="failed"], .market-sync-state[data-status="partial"] { color: var(--warning); }
+.market-sync-issues { margin: 6px 0 0 calc(4.5em + 12px); color: var(--secondary); font-size: 13px; }
+.market-sync-issues summary { cursor: pointer; }
+.market-sync-issues ul { padding-inline-start: 1.25em; overflow-wrap: anywhere; }
 .journal-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
 .attention-panel { margin-top: 16px; }
 .attention-panel .panel-header { padding: 12px 16px; }
